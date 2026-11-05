@@ -36,9 +36,16 @@
     window.fbSet = set;
     window.fbRemove = remove;
 
-    if (typeof window.initFirebaseSync === 'function') {
-      window.initFirebaseSync();
-    }
+    // 即時リスナー開始
+    const gamesRef = ref(db, 'games');
+    onValue(gamesRef, (snapshot) => {
+      const data = snapshot.val();
+      if (typeof window.handleFirebaseDataUpdate === 'function') {
+        window.handleFirebaseDataUpdate(data);
+      }
+    }, (error) => {
+      console.error("Firebase Sync Error:", error);
+    });
   </script>
   
   <style>
@@ -568,33 +575,23 @@
       };
     }
 
-    // Firebaseリアルタイムリスナーのセットアップ
-    window.initFirebaseSync = function() {
-      const db = window.firebaseDB;
-      if (!db) return;
-      const gamesRef = window.fbRef(db, 'games');
-      window.fbOnValue(gamesRef, (snapshot) => {
-        const data = snapshot.val();
-        appState.games = firebaseValueToArray(data)
-          .map(normalizeFirebaseGame)
-          .filter(game => game && game.id);
+    // Firebaseからのリアルタイムデータ更新を受け取るグローバル関数
+    window.handleFirebaseDataUpdate = function(data) {
+      appState.games = firebaseValueToArray(data)
+        .map(normalizeFirebaseGame)
+        .filter(game => game && game.id);
 
-        if (appState.currentGameId &&
-            !appState.games.some(game => game.id === appState.currentGameId)) {
-          appState.currentGameId = null;
-          appState.currentView = 'home';
-        }
-        render();
-      }, (error) => {
-        console.error('Firebase Error:', error);
-        showToast('データの取得に失敗しました。', 'error');
-      });
+      if (appState.currentGameId && !appState.games.some(game => game.id === appState.currentGameId)) {
+        appState.currentGameId = null;
+        appState.currentView = 'home';
+      }
+      render();
     };
 
     // Firebaseクラウドへの保存
     function saveStateToStorage() {
       const db = window.firebaseDB;
-      if (db) {
+      if (db && window.fbRef && window.fbSet) {
         const gamesRef = window.fbRef(db, 'games');
         window.fbSet(gamesRef, appState.games);
       }
@@ -602,9 +599,6 @@
 
     // 初期化
     window.onload = function() {
-      if (window.firebaseDB) {
-        window.initFirebaseSync();
-      }
       render();
     };
 
