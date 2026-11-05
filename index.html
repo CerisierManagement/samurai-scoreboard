@@ -11,42 +11,8 @@
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
 
-  <!-- Firebase Realtime Database SDK (v11) -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getDatabase, ref, onValue, set, remove } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
-
-    const firebaseConfig = {
-      apiKey: "AIzaSyCviaffjR_E3A9bUBu1G50gybiMwa7kxzw",
-      authDomain: "samurai-7c5e8.firebaseapp.com",
-      projectId: "samurai-7c5e8",
-      storageBucket: "samurai-7c5e8.firebasestorage.app",
-      messagingSenderId: "905817986541",
-      appId: "1:905817986541:web:bae3cbc6c40cb72903c3e4",
-      measurementId: "G-PS7LLL5RTR",
-      databaseURL: "https://samurai-7c5e8-default-rtdb.firebaseio.com"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-
-    window.firebaseDB = db;
-    window.fbRef = ref;
-    window.fbOnValue = onValue;
-    window.fbSet = set;
-    window.fbRemove = remove;
-
-    // 即時リスナー開始
-    const gamesRef = ref(db, 'games');
-    onValue(gamesRef, (snapshot) => {
-      const data = snapshot.val();
-      if (typeof window.handleFirebaseDataUpdate === 'function') {
-        window.handleFirebaseDataUpdate(data);
-      }
-    }, (error) => {
-      console.error("Firebase Sync Error:", error);
-    });
-  </script>
+  <!-- PeerJS (サーバー設定不要・即時P2Pリアルタイム同期ライブラリ) -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   
   <style>
     body {
@@ -98,6 +64,12 @@
 
       <!-- 右側コントロール (ゲーム選択中のみ有効) -->
       <div id="headerGameControls" class="hidden flex items-center gap-2 sm:gap-4">
+        <!-- リアルタイム同期ステータス表示 -->
+        <div class="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs">
+          <span id="syncStatusDot" class="w-2 h-2 rounded-full bg-emerald-500 mr-2 animate-pulse"></span>
+          <span id="syncStatusText" class="text-slate-300 font-bold">P2P同期中</span>
+        </div>
+
         <!-- 管理モード切替スイッチ -->
         <div class="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5">
           <span class="text-xs font-bold text-slate-400 mr-2 flex items-center gap-1">
@@ -526,65 +498,129 @@
       { name: 'アイテム付与', costCount: 3 }
     ];
 
+    const LOCAL_STORAGE_KEY = 'samurai_scoreboard_games_v3';
+
     // アプリ状態
     let appState = {
       games: [],
       currentGameId: null,
-      currentView: 'home', // home, createGame, gameDetail, resultInput, itemConfig, itemChance, itemExchange
+      currentView: 'home',
       isAdmin: false
     };
 
-    // 結果入力一時状態
-    let inputResultMode = 'add'; // 'add' or 'set'
+    // P2P リアルタイム通信管理オブジェクト
+    let peer = null;
+    let peerConnections = [];
 
-    // くじ引き用一時状態
-    let chanceCards = [];
-    let isShuffled = false;
-    let chanceRevealedCards = [];
-
-    // アイテム交換一時状態
-    let selectedExchangeRecipe = null;
-    let selectedCostItems = [];
-
-    // Firebaseの配列データを、配列または数値キー付きオブジェクトのどちらでも扱えるよう統一
-    function firebaseValueToArray(value) {
-      if (Array.isArray(value)) return value;
-      if (value && typeof value === 'object') {
-        return Object.keys(value).sort((a, b) => {
-          const na = Number(a), nb = Number(b);
-          if (Number.isInteger(na) && Number.isInteger(nb)) return na - nb;
-          return a.localeCompare(b);
-        }).map(key => value[key]);
+    // ローカルストレージからの読み込み（リロード時にも消えずに確実に残る）
+    function loadLocalState() {
+      try {
+        const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (stored) {
+          appState.games = JSON.parse(stored);
+        }
+      } catch (e) {
+        console.error("Local storage load error:", e);
       }
-      return [];
     }
 
-    function normalizeFirebaseGame(game) {
-      if (!game || typeof game !== 'object') return null;
-      return {
-        ...game,
-        teams: firebaseValueToArray(game.teams).filter(Boolean).map(team => ({
-          ...team,
-          score: Number(team.score) || 0,
-          kills: Number(team.kills) || 0,
-          items: firebaseValueToArray(team.items).filter(item => item != null)
-        })),
-        itemsMaster: firebaseValueToArray(game.itemsMaster).filter(Boolean).map(i => typeof i === 'string' ? { name: i, enabled: true } : i),
-        exchangeRecipes: firebaseValueToArray(game.exchangeRecipes).filter(Boolean),
-        history: firebaseValueToArray(game.history).filter(Boolean)
-      };
+    // ローカル保存＆接続中の全端末へ同期データを直接ブロードキャスト送信
+    function saveStateToStorage() {
+      try {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(appState.games));
+      } catch (e) {}
+
+      // P2P通信で接続されている全ての端末へデータを直接一斉送信
+      peerConnections.forEach(conn => {
+        if (conn && conn.open) {
+          conn.send({ type: 'SYNC_GAMES', games: appState.games });
+        }
+      });
     }
 
-    // Firebaseからのリアルタイムデータ更新を受け取るグローバル関数
-    window.handleFirebaseDataUpdate = function(data) {
-      appState.games = firebaseValueToArray(data)
-        .map(normalizeFirebaseGame)
-        .filter(game => game && game.id);
+    // P2P通信（PeerJS）の初期化
+    function initP2PSync() {
+      // 共通のルームID（合戦共有キー）
+      const peerId = 'samurai-scoreboard-room-master';
+      
+      try {
+        peer = new Peer(peerId);
+        
+        // 自分がホスト（部屋作成者）になった場合
+        peer.on('open', (id) => {
+          updateSyncStatus('ホストとして接続中', 'emerald');
+        });
 
-      if (appState.currentGameId && !appState.games.some(game => game.id === appState.currentGameId)) {
-        appState.currentGameId = null;
-        appState.currentView = 'home';
+        // 誰かが自分に接続してきた場合
+        peer.on('connection', (conn) => {
+          peerConnections.push(conn);
+          // 新しい参加者に現在の最新合戦データを即座に送信
+          conn.on('open', () => {
+            conn.send({ type: 'SYNC_GAMES', games: appState.games });
+          });
+          conn.on('data', (data) => handleReceivedP2PData(data));
+          conn.on('close', () => {
+            peerConnections = peerConnections.filter(c => c !== conn);
+          });
+        });
+
+        // IDが重複（すでにホストが存在する）場合はクライアント（参加者）として接続
+        peer.on('error', (err) => {
+          if (err.type === 'unavailable-id') {
+            connectAsClient(peerId);
+          }
+        });
+      } catch (e) {
+        console.warn("PeerJS falling back to local mode");
       }
+    }
+
+    function connectAsClient(hostId) {
+      // ランダムIDで自分を生成
+      peer = new Peer();
+      peer.on('open', () => {
+        const conn = peer.connect(hostId);
+        peerConnections.push(conn);
+        
+        conn.on('open', () => {
+          updateSyncStatus('リアルタイム同期中', 'emerald');
+        });
+        conn.on('data', (data) => handleReceivedP2PData(data));
+        conn.on('close', () => {
+          updateSyncStatus('同期が切断されました', 'amber');
+        });
+      });
+    }
+
+    // 受信したデータを自分の画面に反映
+    function handleReceivedP2PData(data) {
+      if (data && data.type === 'SYNC_GAMES' && Array.isArray(data.games)) {
+        appState.games = data.games;
+        try {
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(appState.games));
+        } catch(e) {}
+
+        if (appState.currentGameId && !appState.games.some(g => g.id === appState.currentGameId)) {
+          appState.currentGameId = null;
+          appState.currentView = 'home';
+        }
+        render();
+      }
+    }
+
+    function updateSyncStatus(text, color) {
+      const dot = document.getElementById('syncStatusDot');
+      const txt = document.getElementById('syncStatusText');
+      if (txt) txt.innerText = text;
+      if (dot) {
+        dot.className = `w-2 h-2 rounded-full bg-${color}-500 mr-2 animate-pulse`;
+      }
+    }
+
+    // 初期化
+    window.onload = function() {
+      loadLocalState();
+      initP2PSync();
       render();
     };
 
@@ -891,7 +927,7 @@
       const container = document.getElementById('teamCardsContainer');
       container.innerHTML = '';
 
-      const teams = firebaseValueToArray(game.teams).filter(Boolean);
+      const teams = (Array.isArray(game.teams) ? game.teams : []).filter(Boolean);
       if (teams.length === 0) {
         container.innerHTML = '<p class="col-span-full text-center text-slate-400 py-8">この合戦には参加チームが登録されていません。</p>';
         return;
