@@ -188,6 +188,17 @@
             <i data-lucide="dices" class="w-4 h-4"></i> アイテム獲得チャンス
           </button>
           
+          <!-- 非管理モード時にも常時表示：「アイテム交換申請」ボタン -->
+          <button onclick="navigateTo('itemExchange')" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2.5 rounded-xl text-sm transition flex items-center gap-2">
+            <i data-lucide="repeat" class="w-4 h-4"></i> <span id="navExchangeBtnText">アイテム交換申請</span>
+          </button>
+
+          <!-- 管理モード専用：「未承認の交換申請」確認ボタン -->
+          <button onclick="openRequestsModal()" class="admin-only hidden bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-4 py-2.5 rounded-xl text-sm transition flex items-center gap-2 relative">
+            <i data-lucide="inbox" class="w-4 h-4"></i> 交換申請の承認
+            <span id="requestsBadge" class="hidden bg-rose-600 text-white text-[10px] px-2 py-0.5 rounded-full font-mono">0</span>
+          </button>
+
           <button onclick="navigateTo('resultInput')" class="admin-only hidden bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 font-bold px-4 py-2.5 rounded-xl text-sm transition flex items-center gap-2">
             <i data-lucide="edit-3" class="w-4 h-4"></i> 合戦結果入力
           </button>
@@ -198,10 +209,6 @@
 
           <button onclick="navigateTo('itemConfig')" class="admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-4 py-2.5 rounded-xl text-sm transition flex items-center gap-2">
             <i data-lucide="settings" class="w-4 h-4"></i> アイテム設定
-          </button>
-
-          <button onclick="navigateTo('itemExchange')" class="admin-only hidden bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2.5 rounded-xl text-sm transition flex items-center gap-2">
-            <i data-lucide="repeat" class="w-4 h-4"></i> アイテム交換
           </button>
 
           <button onclick="openItemHistoryModal()" class="admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-4 py-2.5 rounded-xl text-sm transition flex items-center gap-2">
@@ -362,14 +369,14 @@
     </section>
 
     <!-- ==========================================
-         [D-3] アイテム交換画面 (管理専用)
+         [D-3] アイテム交換・申請画面 (全プレイヤー対応)
     ========================================== -->
     <section id="view-itemExchange" class="max-w-3xl mx-auto bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6 hidden">
       <div class="border-b border-slate-800 pb-4">
-        <h2 class="text-2xl font-black text-white flex items-center gap-2">
-          <i data-lucide="repeat" class="w-6 h-6 text-indigo-400"></i> アイテム交換所
+        <h2 id="exchangeTitleText" class="text-2xl font-black text-white flex items-center gap-2">
+          <i data-lucide="repeat" class="w-6 h-6 text-indigo-400"></i> アイテム交換申請
         </h2>
-        <p class="text-xs text-slate-400 mt-1">現在所持しているアイテムを指定個数消費し、強力な新アイテムと交換します。</p>
+        <p id="exchangeDescText" class="text-xs text-slate-400 mt-1">所持アイテムを消費して希望アイテムとの交換を申請します（管理者の承認後に反映されます）。</p>
       </div>
 
       <div class="space-y-6">
@@ -405,7 +412,7 @@
             戻る
           </button>
           <button id="btnExecuteExchange" onclick="executeItemExchange()" disabled class="w-1/2 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-black rounded-xl shadow-lg transition flex items-center justify-center gap-2">
-            <i data-lucide="check-circle" class="w-5 h-5"></i> 交換を実行する
+            <i data-lucide="send" class="w-5 h-5"></i> <span id="btnExchangeLabel">申請を送信する</span>
           </button>
         </div>
       </div>
@@ -416,6 +423,22 @@
   <!-- ==========================================
        モーダル各種
   ========================================== -->
+
+  <!-- 管理者専用：交換申請の承認・棄却モーダル -->
+  <div id="requestsModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="font-bold text-white flex items-center gap-2">
+          <i data-lucide="inbox" class="w-5 h-5 text-amber-400"></i> 交換申請の確認と承認
+        </h3>
+        <button onclick="closeRequestsModal()" class="text-slate-500 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <div id="requestsListContainer" class="max-h-80 overflow-y-auto space-y-3 pr-1">
+        <!-- Dynamic Pending Requests -->
+      </div>
+      <button onclick="closeRequestsModal()" class="w-full py-2 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs">閉じる</button>
+    </div>
+  </div>
 
   <!-- パスワード認証モーダル -->
   <div id="adminAuthModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
@@ -519,11 +542,20 @@
     // 結果入力一時状態 ('add' または 'set')
     let inputResultMode = 'add';
 
+    // くじ引き用一時状態
+    let chanceCards = [];
+    let isShuffled = false;
+    let chanceRevealedCards = [];
+
+    // アイテム交換一時状態
+    let selectedExchangeRecipe = null;
+    let selectedCostItems = [];
+
     // P2P リアルタイム通信管理オブジェクト
     let peer = null;
     let peerConnections = [];
 
-    // ローカルストレージからの読み込み（リロード時にも消えずに確実に残る）
+    // ローカルストレージからの読み込み
     function loadLocalState() {
       try {
         const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -535,13 +567,12 @@
       }
     }
 
-    // ローカル保存＆接続中の全端末へ同期データを直接ブロードキャスト送信
+    // ローカル保存＆接続中の全端末へ同期データを一斉送信
     function saveStateToStorage() {
       try {
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(appState.games));
       } catch (e) {}
 
-      // P2P通信で接続されている全ての端末へデータを直接一斉送信
       peerConnections.forEach(conn => {
         if (conn && conn.open) {
           conn.send({ type: 'SYNC_GAMES', games: appState.games });
@@ -551,21 +582,17 @@
 
     // P2P通信（PeerJS）の初期化
     function initP2PSync() {
-      // 共通のルームID（合戦共有キー）
       const peerId = 'samurai-scoreboard-room-master';
       
       try {
         peer = new Peer(peerId);
         
-        // 自分がホスト（部屋作成者）になった場合
         peer.on('open', (id) => {
           updateSyncStatus('ホストとして接続中', 'emerald');
         });
 
-        // 誰かが自分に接続してきた場合
         peer.on('connection', (conn) => {
           peerConnections.push(conn);
-          // 新しい参加者に現在の最新合戦データを即座に送信
           conn.on('open', () => {
             conn.send({ type: 'SYNC_GAMES', games: appState.games });
           });
@@ -575,7 +602,6 @@
           });
         });
 
-        // IDが重複（すでにホストが存在する）場合はクライアント（参加者）として接続
         peer.on('error', (err) => {
           if (err.type === 'unavailable-id') {
             connectAsClient(peerId);
@@ -587,7 +613,6 @@
     }
 
     function connectAsClient(hostId) {
-      // ランダムIDで自分を生成
       peer = new Peer();
       peer.on('open', () => {
         const conn = peer.connect(hostId);
@@ -603,7 +628,7 @@
       });
     }
 
-    // 受信したデータを自分の画面に反映
+    // 受信データの反映
     function handleReceivedP2PData(data) {
       if (data && data.type === 'SYNC_GAMES' && Array.isArray(data.games)) {
         appState.games = data.games;
@@ -627,7 +652,6 @@
         dot.className = `w-2 h-2 rounded-full bg-${color}-500 mr-2 animate-pulse`;
       }
 
-      // トップ画面用ステータス表示の更新
       const homeDot = document.getElementById('homeSyncStatusDot');
       const homeTxt = document.getElementById('homeSyncStatusText');
       if (homeTxt) homeTxt.innerText = text;
@@ -639,16 +663,14 @@
     // 初期化
     window.onload = function() {
       loadLocalState();
-      initP2PSync(); // トップ画面表示時に即座にP2P通信を常時起動
+      initP2PSync();
       render();
     };
 
-    // カレントゲーム取得
     function getCurrentGame() {
       return appState.games.find(g => g.id === appState.currentGameId);
     }
 
-    // 画面切り替えルーター
     function navigateTo(viewName, gameId = null) {
       if (appState.currentView === 'itemChance' && viewName !== 'itemChance') {
         savePartialChanceResultsOnLeave();
@@ -662,7 +684,6 @@
       render();
     }
 
-    // 全体描画ファンクション
     function render() {
       ['home', 'createGame', 'gameDetail', 'resultInput', 'itemConfig', 'itemChance', 'itemExchange'].forEach(v => {
         const el = document.getElementById(`view-${v}`);
@@ -680,6 +701,7 @@
       }
 
       renderAdminUI();
+      updateRequestsBadge();
 
       switch (appState.currentView) {
         case 'home':
@@ -709,7 +731,6 @@
       }
     }
 
-    // 管理モードUI表示の追従
     function renderAdminUI() {
       const toggleDot = document.getElementById('toggleAdminDot');
       const toggleBtn = document.getElementById('toggleAdminBtn');
@@ -732,9 +753,28 @@
           el.classList.add('hidden');
         }
       });
+
+      // 交換ボタンの文言切替
+      const navExchangeBtnText = document.getElementById('navExchangeBtnText');
+      if (navExchangeBtnText) {
+        navExchangeBtnText.innerText = appState.isAdmin ? 'アイテム直接交換' : 'アイテム交換申請';
+      }
     }
 
-    // トースト通知
+    function updateRequestsBadge() {
+      const game = getCurrentGame();
+      const badge = document.getElementById('requestsBadge');
+      if (!badge) return;
+
+      const pendingCount = (game && game.requests) ? game.requests.filter(r => r.status === 'pending').length : 0;
+      if (pendingCount > 0) {
+        badge.innerText = pendingCount;
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+    }
+
     function showToast(message, type = 'info') {
       const container = document.getElementById('toastContainer');
       if (!container) return;
@@ -911,7 +951,8 @@
         })),
         itemsMaster: DEFAULT_MASTER_ITEMS.map(name => ({ name, enabled: true })),
         exchangeRecipes: [...DEFAULT_EXCHANGE_RECIPES],
-        history: []
+        history: [],
+        requests: []
       };
 
       appState.games.unshift(newGame);
@@ -1489,7 +1530,7 @@
     }
 
     // ==========================================
-    // [D-3] アイテム交換機能 (管理専用)
+    // [D-3] アイテム交換・申請機能 (一般＆管理両用)
     // ==========================================
     function initItemExchangeScreen() {
       const game = getCurrentGame();
@@ -1504,6 +1545,21 @@
         opt.innerText = t.name;
         teamSelect.appendChild(opt);
       });
+
+      // 管理者と一般プレイヤーでの見出し・テキスト制御
+      const titleEl = document.getElementById('exchangeTitleText');
+      const descEl = document.getElementById('exchangeDescText');
+      const btnLabel = document.getElementById('btnExchangeLabel');
+
+      if (appState.isAdmin) {
+        if (titleEl) titleEl.innerHTML = `<i data-lucide="repeat" class="w-6 h-6 text-indigo-400"></i> アイテム直接交換`;
+        if (descEl) descEl.innerText = '指定個数の所持アイテムを消費し、即座に新しいアイテムと交換します。';
+        if (btnLabel) btnLabel.innerText = '交換を直接実行する';
+      } else {
+        if (titleEl) titleEl.innerHTML = `<i data-lucide="send" class="w-6 h-6 text-indigo-400"></i> アイテム交換申請`;
+        if (descEl) descEl.innerText = '所持アイテムを消費して希望アイテムとの交換を申請します（管理者の承認後に反映されます）。';
+        if (btnLabel) btnLabel.innerText = '交換申請を送信する';
+      }
 
       selectedExchangeRecipe = null;
       selectedCostItems = [];
@@ -1525,7 +1581,7 @@
       const targetList = document.getElementById('exchangeTargetList');
       targetList.innerHTML = '';
 
-      game.exchangeRecipes.forEach((recipe, idx) => {
+      game.exchangeRecipes.forEach((recipe) => {
         const isSelected = selectedExchangeRecipe && selectedExchangeRecipe.name === recipe.name;
         const card = document.createElement('div');
         card.className = `p-4 rounded-xl border cursor-pointer transition flex items-center justify-between ${
@@ -1636,19 +1692,144 @@
       const consumedItemNames = [];
       removeIndices.forEach(idx => {
         consumedItemNames.push(team.items[idx]);
-        team.items.splice(idx, 1);
       });
 
-      if (!Array.isArray(team.items)) team.items = [];
-      team.items.push(selectedExchangeRecipe.name);
+      // 管理モードの場合は直接実行、非管理モードの場合は申請登録
+      if (appState.isAdmin) {
+        removeIndices.forEach(idx => {
+          team.items.splice(idx, 1);
+        });
+        if (!Array.isArray(team.items)) team.items = [];
+        team.items.push(selectedExchangeRecipe.name);
 
-      addHistoryLog(game, team.name, 'アイテム交換', [
-        `消費: [${consumedItemNames.join(', ')}] ➔ 獲得: [${selectedExchangeRecipe.name}]`
-      ]);
+        addHistoryLog(game, team.name, 'アイテム交換(直接)', [
+          `消費: [${consumedItemNames.join(', ')}] ➔ 獲得: [${selectedExchangeRecipe.name}]`
+        ]);
+
+        saveStateToStorage();
+        showToast(`「${team.name}」がアイテム交換を完了しました！`, 'success');
+      } else {
+        if (!game.requests) game.requests = [];
+        const timeStr = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+
+        game.requests.unshift({
+          id: 'req-' + Date.now(),
+          time: timeStr,
+          teamId: team.id,
+          teamName: team.name,
+          targetItem: selectedExchangeRecipe.name,
+          costItemNames: consumedItemNames,
+          costItemIndices: removeIndices,
+          status: 'pending' // pending, approved, rejected
+        });
+
+        saveStateToStorage();
+        showToast(`「${team.name}」のアイテム交換申請を管理者に送信しました！`, 'success');
+      }
+
+      navigateTo('gameDetail');
+    }
+
+    // ==========================================
+    // 交換申請の承認・棄却（管理専用）
+    // ==========================================
+    function openRequestsModal() {
+      const game = getCurrentGame();
+      if (!game) return;
+
+      const container = document.getElementById('requestsListContainer');
+      container.innerHTML = '';
+
+      const pendingRequests = (game.requests || []).filter(r => r.status === 'pending');
+
+      if (pendingRequests.length === 0) {
+        container.innerHTML = `<p class="text-xs text-slate-500 py-8 text-center">現在、未承認の交換申請はありません。</p>`;
+      } else {
+        pendingRequests.forEach(req => {
+          const div = document.createElement('div');
+          div.className = 'p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-3';
+
+          div.innerHTML = `
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-white text-sm">🛡 ${escapeHtml(req.teamName)}</span>
+              <span class="text-[10px] font-mono text-slate-400">${req.time}</span>
+            </div>
+            <div class="bg-slate-900 p-3 rounded-lg border border-slate-800/80 text-xs space-y-1">
+              <div><span class="text-slate-400">消費アイテム:</span> <span class="text-amber-300 font-bold">[${escapeHtml(req.costItemNames.join(', '))}]</span></div>
+              <div><span class="text-slate-400">獲得希望:</span> <span class="text-indigo-400 font-bold">[${escapeHtml(req.targetItem)}]</span></div>
+            </div>
+            <div class="flex gap-2">
+              <button onclick="handleExchangeRequest('${req.id}', 'reject')" class="w-1/2 py-2 bg-slate-800 hover:bg-slate-700 text-rose-400 font-bold rounded-lg text-xs transition">棄却する</button>
+              <button onclick="handleExchangeRequest('${req.id}', 'approve')" class="w-1/2 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-lg text-xs transition">承認する</button>
+            </div>
+          `;
+          container.appendChild(div);
+        });
+      }
+
+      document.getElementById('requestsModal').classList.remove('hidden');
+    }
+
+    function closeRequestsModal() {
+      document.getElementById('requestsModal').classList.add('hidden');
+    }
+
+    function handleExchangeRequest(reqId, action) {
+      const game = getCurrentGame();
+      if (!game || !game.requests) return;
+
+      const req = game.requests.find(r => r.id === reqId);
+      if (!req || req.status !== 'pending') return;
+
+      const team = game.teams.find(t => t.id === req.teamId);
+
+      if (action === 'approve') {
+        if (!team) {
+          showToast('対象の軍が見つかりません', 'error');
+          return;
+        }
+
+        // 申請時に指定されたアイテムが今も所持されているか確認・削除
+        const currentItems = [...team.items];
+        let canConsume = true;
+
+        req.costItemNames.forEach(costName => {
+          const idx = currentItems.indexOf(costName);
+          if (idx !== -1) {
+            currentItems.splice(idx, 1);
+          } else {
+            canConsume = false;
+          }
+        });
+
+        if (!canConsume) {
+          showToast(`「${team.name}」の所持アイテムが変更されたため、承認できません。`, 'error');
+          req.status = 'rejected';
+          saveStateToStorage();
+          openRequestsModal();
+          return;
+        }
+
+        team.items = currentItems;
+        team.items.push(req.targetItem);
+        req.status = 'approved';
+
+        addHistoryLog(game, team.name, '申請承認(交換)', [
+          `消費: [${req.costItemNames.join(', ')}] ➔ 獲得: [${req.targetItem}]`
+        ]);
+
+        showToast(`「${team.name}」の交換申請を承認しました！`, 'success');
+      } else {
+        req.status = 'rejected';
+        addHistoryLog(game, team ? team.name : '不明', '申請棄却', [
+          `希望: [${req.targetItem}] の申請が棄却されました`
+        ]);
+        showToast('交換申請を棄却しました', 'info');
+      }
 
       saveStateToStorage();
-      showToast(`「${team.name}」がアイテム交換を完了しました！`, 'success');
-      navigateTo('gameDetail');
+      openRequestsModal();
+      render();
     }
 
     // ==========================================
