@@ -1060,7 +1060,10 @@
             </div>
 
             <div class="space-y-2">
-              <span class="block text-xs font-bold text-slate-400 uppercase tracking-wider">獲得アイテム一覧</span>
+              <div class="flex items-center justify-between">
+                <span class="block text-xs font-bold text-slate-400 uppercase tracking-wider">獲得アイテム一覧</span>
+                <span class="text-xs font-mono font-bold text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/20">合計: ${team.items ? team.items.length : 0} 個</span>
+              </div>
               ${itemsHtml}
             </div>
           </div>
@@ -1618,6 +1621,18 @@
       costSection.classList.remove('hidden');
       document.getElementById('requiredCostCount').innerText = selectedExchangeRecipe.costCount;
 
+      // 未承認（pending）の申請で使用されているインデックス（アイテム）を抽出
+      const pendingUsedIndices = new Set();
+      if (game.requests) {
+        game.requests
+          .filter(r => r.teamId === team.id && r.status === 'pending')
+          .forEach(r => {
+            if (Array.isArray(r.costItemIndices)) {
+              r.costItemIndices.forEach(idx => pendingUsedIndices.add(idx));
+            }
+          });
+      }
+
       const teamItems = team.items || [];
       if (teamItems.length === 0) {
         costList.innerHTML = `<p class="text-xs text-slate-500 py-2">この軍は交換に使用できる所持アイテムがありません。</p>`;
@@ -1625,15 +1640,21 @@
         teamItems.forEach((itemName, itemIdx) => {
           const itemUid = `${itemIdx}-${itemName}`;
           const isChecked = selectedCostItems.includes(itemUid);
+          const isPendingUsed = pendingUsedIndices.has(itemIdx);
 
           const label = document.createElement('label');
-          label.className = `px-3 py-2 rounded-xl border text-xs font-bold cursor-pointer select-none flex items-center gap-2 transition ${
-            isChecked ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+          label.className = `px-3 py-2 rounded-xl border text-xs font-bold select-none flex items-center gap-2 transition ${
+            isPendingUsed
+              ? 'bg-slate-900/50 border-slate-800/50 text-slate-600 opacity-60 cursor-not-allowed'
+              : isChecked
+              ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300 cursor-pointer'
+              : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white cursor-pointer'
           }`;
 
           label.innerHTML = `
-            <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleCostItemSelection('${itemUid}')" class="rounded bg-slate-950 border-slate-800 text-indigo-500 focus:ring-indigo-500">
+            <input type="checkbox" ${isChecked ? 'checked' : ''} ${isPendingUsed ? 'disabled' : ''} onchange="toggleCostItemSelection('${itemUid}')" class="rounded bg-slate-950 border-slate-800 text-indigo-500 focus:ring-indigo-500 disabled:opacity-50">
             <span>${escapeHtml(itemName)}</span>
+            ${isPendingUsed ? '<span class="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded font-normal">申請中</span>' : ''}
           `;
           costList.appendChild(label);
         });
