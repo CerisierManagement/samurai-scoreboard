@@ -99,7 +99,14 @@
     <section id="view-home" class="space-y-8">
       <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-6">
         <div>
-          <h1 class="text-3xl font-black text-white tracking-tight">合戦一覧</h1>
+          <div class="flex items-center gap-3">
+            <h1 class="text-3xl font-black text-white tracking-tight">合戦一覧</h1>
+            <!-- トップ画面用 P2P 同期ステータス表示 -->
+            <div class="flex items-center bg-slate-900 border border-slate-800 rounded-xl px-3 py-1 text-xs">
+              <span id="homeSyncStatusDot" class="w-2 h-2 rounded-full bg-emerald-500 mr-2 animate-pulse"></span>
+              <span id="homeSyncStatusText" class="text-slate-300 font-bold">P2P同期準備中</span>
+            </div>
+          </div>
           <p class="text-slate-400 text-sm mt-1">開催中の戦いや過去の合戦を選択、または新しく開始します。</p>
         </div>
         <button onclick="navigateTo('createGame')" class="inline-flex items-center gap-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black px-6 py-3 rounded-xl shadow-lg shadow-amber-500/20 transition transform active:scale-95">
@@ -615,26 +622,20 @@
       if (dot) {
         dot.className = `w-2 h-2 rounded-full bg-${color}-500 mr-2 animate-pulse`;
       }
-    }
 
-    // 初期化
-    window.onload = function() {
-      loadLocalState();
-      initP2PSync();
-      render();
-    };
-
-    // Firebaseクラウドへの保存
-    function saveStateToStorage() {
-      const db = window.firebaseDB;
-      if (db && window.fbRef && window.fbSet) {
-        const gamesRef = window.fbRef(db, 'games');
-        window.fbSet(gamesRef, appState.games);
+      // トップ画面用ステータス表示の更新
+      const homeDot = document.getElementById('homeSyncStatusDot');
+      const homeTxt = document.getElementById('homeSyncStatusText');
+      if (homeTxt) homeTxt.innerText = text;
+      if (homeDot) {
+        homeDot.className = `w-2 h-2 rounded-full bg-${color}-500 mr-2 animate-pulse`;
       }
     }
 
     // 初期化
     window.onload = function() {
+      loadLocalState();
+      initP2PSync(); // トップ画面表示時に即座にP2P通信を常時起動
       render();
     };
 
