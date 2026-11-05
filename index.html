@@ -533,23 +533,59 @@
       isAdmin: false
     };
 
+    // Firebaseの配列データを、配列または数値キー付きオブジェクトのどちらでも扱えるよう統一
+    function firebaseValueToArray(value) {
+      if (Array.isArray(value)) return value;
+      if (value && typeof value === 'object') {
+        return Object.keys(value).sort((a, b) => {
+          const na = Number(a), nb = Number(b);
+          if (Number.isInteger(na) && Number.isInteger(nb)) return na - nb;
+          return a.localeCompare(b);
+        }).map(key => value[key]);
+      }
+      return [];
+    }
+
+    function normalizeFirebaseGame(game) {
+      if (!game || typeof game !== 'object') return null;
+      return {
+        ...game,
+        teams: firebaseValueToArray(game.teams).filter(Boolean).map(team => ({
+          ...team,
+          score: Number(team.score) || 0,
+          kills: Number(team.kills) || 0,
+          items: firebaseValueToArray(team.items).filter(item => item != null)
+        })),
+        itemsMaster: firebaseValueToArray(game.itemsMaster).filter(Boolean),
+        exchangeRecipes: firebaseValueToArray(game.exchangeRecipes).filter(Boolean),
+        history: firebaseValueToArray(game.history).filter(Boolean)
+      };
+    }
+
     // Firebaseリアルタイムリスナーのセットアップ
     window.initFirebaseSync = function() {
       const db = window.firebaseDB;
-      if (!db) return;
-
+      if (!db) {
+        console.error('Firebaseが初期化されていません。');
+        return;
+      }
       const gamesRef = window.fbRef(db, 'games');
-      
-      // Firebase上のデータが更新されるたびに全端末で自動発火・画面同期
       window.fbOnValue(gamesRef, (snapshot) => {
         const data = snapshot.val();
-        if (data) {
-          appState.games = Array.isArray(data) ? data : Object.values(data);
-        } else {
-          appState.games = [];
-          createSampleGame();
+        appState.games = firebaseValueToArray(data)
+          .map(normalizeFirebaseGame)
+          .filter(game => game && game.id);
+
+        // 合戦データが0件の場合もサンプルは自動作成せず、空の一覧を表示する
+        if (appState.currentGameId &&
+            !appState.games.some(game => game.id === appState.currentGameId)) {
+          appState.currentGameId = null;
+          appState.currentView = 'home';
         }
         render();
+      }, (error) => {
+        console.error('Firebaseデータの読み込みに失敗しました:', error);
+        showToast('合戦データを読み込めませんでした。通信状態やFirebaseの読み取りルールを確認してください。', 'error');
       });
     };
 
@@ -567,26 +603,7 @@
       lucide.createIcons();
     };
 
-    // デフォルトサンプル合戦作成
-    function createSampleGame() {
-      const sample = {
-        id: 'game-' + Date.now(),
-        title: '川中島の合戦 (サンプル)',
-        password: '123',
-        createdAt: new Date().toLocaleString('ja-JP'),
-        teams: [
-          { id: 't1', name: '武田軍', color: '#ef4444', score: 15, kills: 4, items: ['水鉄砲小', '子ども蘇り'] },
-          { id: 't2', name: '上杉軍', color: '#3b82f6', score: 18, kills: 6, items: ['影武者'] },
-          { id: 't3', name: '織田軍', color: '#a855f7', score: 12, kills: 2, items: [] },
-          { id: 't4', name: '徳川軍', color: '#eab308', score: 15, kills: 3, items: ['大人蘇り'] }
-        ],
-        itemsMaster: DEFAULT_MASTER_ITEMS.map(name => ({ name, enabled: true })),
-        exchangeRecipes: [...DEFAULT_EXCHANGE_RECIPES],
-        history: []
-      };
-      appState.games.push(sample);
-      saveStateToStorage();
-    }
+
 
     // カレントゲーム取得
     function getCurrentGame() {
@@ -767,6 +784,7 @@
       if (confirm(`合戦「${game.title}」を削除してもよろしいですか？`)) {
         appState.games = appState.games.filter(g => g.id !== gameId);
         saveStateToStorage();
+        render();
         showToast('合戦データを削除しました', 'info');
       }
     }
@@ -879,8 +897,15 @@
       const container = document.getElementById('teamCardsContainer');
       container.innerHTML = '';
 
+      // Firebaseから取得したデータも必ず配列として扱う
+      const teams = firebaseValueToArray(game.teams).filter(Boolean);
+      if (teams.length === 0) {
+        container.innerHTML = '<p class="col-span-full text-center text-slate-400 py-8">この合戦には参加チームが登録されていません。</p>';
+        return;
+      }
+
       // 得点・撃破数によるソート
-      const sortedTeams = [...game.teams].sort((a, b) => {
+      const sortedTeams = [...teams].sort((a, b) => {
         if (b.score !== a.score) return b.score - a.score;
         return b.kills - a.kills;
       });
