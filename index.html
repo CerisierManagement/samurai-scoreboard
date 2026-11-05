@@ -11,12 +11,11 @@
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
 
-  <!-- Firebase Web SDK (v11 / Realtime Database) -->
+  <!-- Firebase Realtime Database SDK (v11) -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
     import { getDatabase, ref, onValue, set, remove } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
 
-    // ご提供いただいた Firebase 設定情報
     const firebaseConfig = {
       apiKey: "AIzaSyCviaffjR_E3A9bUBu1G50gybiMwa7kxzw",
       authDomain: "samurai-7c5e8.firebaseapp.com",
@@ -28,26 +27,24 @@
       databaseURL: "https://samurai-7c5e8-default-rtdb.firebaseio.com"
     };
 
-    // Firebase 初期化
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    // グローバルへ公開
     window.firebaseDB = db;
     window.fbRef = ref;
     window.fbOnValue = onValue;
     window.fbSet = set;
     window.fbRemove = remove;
 
-    // アプリ初期化実行
-    window.initFirebaseSync();
+    if (typeof window.initFirebaseSync === 'function') {
+      window.initFirebaseSync();
+    }
   </script>
   
   <style>
     body {
       font-family: 'Inter', 'Noto Sans JP', sans-serif;
     }
-    /* 3Dカードフリップ＆ウォッシュシャッフルアニメーション */
     .perspective-1000 {
       perspective: 1000px;
     }
@@ -522,9 +519,6 @@
       { name: 'アイテム付与', costCount: 3 }
     ];
 
-    // ストレージキー
-    const STORAGE_KEY = 'samurai_scoreboard_games_v2';
-
     // アプリ状態
     let appState = {
       games: [],
@@ -532,6 +526,18 @@
       currentView: 'home', // home, createGame, gameDetail, resultInput, itemConfig, itemChance, itemExchange
       isAdmin: false
     };
+
+    // 結果入力一時状態
+    let inputResultMode = 'add'; // 'add' or 'set'
+
+    // くじ引き用一時状態
+    let chanceCards = [];
+    let isShuffled = false;
+    let chanceRevealedCards = [];
+
+    // アイテム交換一時状態
+    let selectedExchangeRecipe = null;
+    let selectedCostItems = [];
 
     // Firebaseの配列データを、配列または数値キー付きオブジェクトのどちらでも扱えるよう統一
     function firebaseValueToArray(value) {
@@ -556,7 +562,7 @@
           kills: Number(team.kills) || 0,
           items: firebaseValueToArray(team.items).filter(item => item != null)
         })),
-        itemsMaster: firebaseValueToArray(game.itemsMaster).filter(Boolean),
+        itemsMaster: firebaseValueToArray(game.itemsMaster).filter(Boolean).map(i => typeof i === 'string' ? { name: i, enabled: true } : i),
         exchangeRecipes: firebaseValueToArray(game.exchangeRecipes).filter(Boolean),
         history: firebaseValueToArray(game.history).filter(Boolean)
       };
@@ -565,10 +571,7 @@
     // Firebaseリアルタイムリスナーのセットアップ
     window.initFirebaseSync = function() {
       const db = window.firebaseDB;
-      if (!db) {
-        console.error('Firebaseが初期化されていません。');
-        return;
-      }
+      if (!db) return;
       const gamesRef = window.fbRef(db, 'games');
       window.fbOnValue(gamesRef, (snapshot) => {
         const data = snapshot.val();
@@ -576,7 +579,6 @@
           .map(normalizeFirebaseGame)
           .filter(game => game && game.id);
 
-        // 合戦データが0件の場合もサンプルは自動作成せず、空の一覧を表示する
         if (appState.currentGameId &&
             !appState.games.some(game => game.id === appState.currentGameId)) {
           appState.currentGameId = null;
@@ -584,8 +586,8 @@
         }
         render();
       }, (error) => {
-        console.error('Firebaseデータの読み込みに失敗しました:', error);
-        showToast('合戦データを読み込めませんでした。通信状態やFirebaseの読み取りルールを確認してください。', 'error');
+        console.error('Firebase Error:', error);
+        showToast('データの取得に失敗しました。', 'error');
       });
     };
 
@@ -600,10 +602,11 @@
 
     // 初期化
     window.onload = function() {
-      lucide.createIcons();
+      if (window.firebaseDB) {
+        window.initFirebaseSync();
+      }
+      render();
     };
-
-
 
     // カレントゲーム取得
     function getCurrentGame() {
@@ -618,7 +621,7 @@
 
       if (gameId) {
         appState.currentGameId = gameId;
-        appState.isAdmin = false; // 合戦選択直後は常に管理モードOFF
+        appState.isAdmin = false;
       }
       appState.currentView = viewName;
       render();
@@ -626,17 +629,14 @@
 
     // 全体描画ファンクション
     function render() {
-      // 全ビューの非表示
       ['home', 'createGame', 'gameDetail', 'resultInput', 'itemConfig', 'itemChance', 'itemExchange'].forEach(v => {
         const el = document.getElementById(`view-${v}`);
         if (el) el.classList.add('hidden');
       });
 
-      // 現在のビューの表示
       const activeEl = document.getElementById(`view-${appState.currentView}`);
       if (activeEl) activeEl.classList.remove('hidden');
 
-      // ヘッダーUIの制御
       const headerControls = document.getElementById('headerGameControls');
       if (appState.currentView !== 'home' && appState.currentView !== 'createGame') {
         headerControls.classList.remove('hidden');
@@ -646,13 +646,11 @@
 
       renderAdminUI();
 
-      // 各画面のレンダリング
       switch (appState.currentView) {
         case 'home':
           renderHome();
           break;
         case 'createGame':
-          // renderCreateGame();
           break;
         case 'gameDetail':
           renderGameDetail();
@@ -671,13 +669,16 @@
           break;
       }
 
-      lucide.createIcons();
+      if (window.lucide) {
+        lucide.createIcons();
+      }
     }
 
     // 管理モードUI表示の追従
     function renderAdminUI() {
       const toggleDot = document.getElementById('toggleAdminDot');
       const toggleBtn = document.getElementById('toggleAdminBtn');
+      if (!toggleDot || !toggleBtn) return;
       
       if (appState.isAdmin) {
         toggleBtn.classList.replace('bg-slate-800', 'bg-amber-500');
@@ -701,6 +702,7 @@
     // トースト通知
     function showToast(message, type = 'info') {
       const container = document.getElementById('toastContainer');
+      if (!container) return;
       const toast = document.createElement('div');
       
       let bg = 'bg-slate-800 text-white border-slate-700';
@@ -736,7 +738,6 @@
       }
 
       appState.games.forEach(g => {
-        // スコア順トップ軍の判定
         const sortedTeams = [...g.teams].sort((a, b) => b.score - a.score || b.kills - a.kills);
         const topTeam = sortedTeams[0];
 
@@ -820,7 +821,7 @@
         `;
         container.appendChild(div);
       });
-      lucide.createIcons();
+      if (window.lucide) lucide.createIcons();
     }
 
     function addTeamInputRow() {
@@ -839,7 +840,6 @@
       renderCreateTeamRows();
     }
 
-    // 新規作成画面に遷移した際
     const originalNavigateTo = navigateTo;
     navigateTo = function(viewName, gameId = null) {
       if (viewName === 'createGame') {
@@ -897,21 +897,17 @@
       const container = document.getElementById('teamCardsContainer');
       container.innerHTML = '';
 
-      // Firebaseから取得したデータも必ず配列として扱う
       const teams = firebaseValueToArray(game.teams).filter(Boolean);
       if (teams.length === 0) {
         container.innerHTML = '<p class="col-span-full text-center text-slate-400 py-8">この合戦には参加チームが登録されていません。</p>';
         return;
       }
 
-      // 得点・撃破数によるソート
       const sortedTeams = [...teams].sort((a, b) => {
         if (b.score !== a.score) return b.score - a.score;
         return b.kills - a.kills;
       });
 
-      // 同点・同撃破数時に同率順位を割り当てる計算
-      let currentRank = 1;
       const teamRanks = [];
 
       sortedTeams.forEach((team, idx) => {
@@ -934,9 +930,8 @@
         if (rank === 2) rankBadge = `<span class="px-3 py-1 rounded-full text-xs font-black bg-slate-300 text-slate-950">2位</span>`;
         if (rank === 3) rankBadge = `<span class="px-3 py-1 rounded-full text-xs font-black bg-amber-700 text-white">3位</span>`;
 
-        // 所持アイテムの重複カウント「アイテム名 ×N」
         const itemCounts = {};
-        team.items.forEach(item => {
+        (team.items || []).forEach(item => {
           itemCounts[item] = (itemCounts[item] || 0) + 1;
         });
 
@@ -977,7 +972,6 @@
               ${rankBadge}
             </div>
 
-            <!-- スコア＆撃破数 -->
             <div class="grid grid-cols-2 gap-3 bg-slate-950 p-4 rounded-xl border border-slate-800/80">
               <div>
                 <span class="block text-[10px] uppercase font-bold text-slate-500 mb-0.5">総合得点</span>
@@ -989,7 +983,6 @@
               </div>
             </div>
 
-            <!-- 所持アイテム一覧 -->
             <div class="space-y-2">
               <span class="block text-xs font-bold text-slate-400 uppercase tracking-wider">獲得アイテム一覧</span>
               ${itemsHtml}
@@ -1001,7 +994,6 @@
       });
     }
 
-    // アイテム削除（管理専用）
     function removeTeamItemByName(teamId, itemName) {
       if (!appState.isAdmin) {
         showToast('アイテムの削除は管理モードでのみ実行可能です', 'warning');
@@ -1111,7 +1103,6 @@
         game.exchangeRecipes = [...DEFAULT_EXCHANGE_RECIPES];
       }
 
-      // 1. くじ引きマスターアイテム一覧
       const container = document.getElementById('configItemList');
       container.innerHTML = '';
 
@@ -1131,7 +1122,6 @@
         container.appendChild(div);
       });
 
-      // 2. アイテム交換レシピ一覧
       const recipeContainer = document.getElementById('configRecipeList');
       recipeContainer.innerHTML = '';
 
@@ -1156,7 +1146,7 @@
         recipeContainer.appendChild(div);
       });
 
-      lucide.createIcons();
+      if (window.lucide) lucide.createIcons();
     }
 
     function toggleItemMaster(idx) {
@@ -1196,7 +1186,6 @@
       showToast(`「${removed[0].name}」を削除しました`, 'info');
     }
 
-    // 交換レシピ管理機能
     function addNewExchangeRecipe() {
       const nameInput = document.getElementById('newRecipeName');
       const costInput = document.getElementById('newRecipeCost');
@@ -1260,8 +1249,7 @@
       chanceRevealedCards = [];
       document.getElementById('btnShuffleStart').disabled = false;
 
-      // ユニークアイテム制限（伝説のサムライ / 影武者）が既にどこかの軍にあれば除外
-      const existingItems = game.teams.flatMap(t => t.items);
+      const existingItems = game.teams.flatMap(t => t.items || []);
       const totalItemCountInGame = existingItems.length;
 
       const availableItems = game.itemsMaster.filter(i => {
@@ -1269,14 +1257,12 @@
         if ((i.name === '伝説のサムライ' || i.name === '影武者') && existingItems.includes(i.name)) {
           return false;
         }
-        // 「アイテム横取り」は全軍でアイテムが1つ以上所持されている場合のみ出現
         if (i.name === 'アイテム横取り' && totalItemCountInGame === 0) {
           return false;
         }
         return true;
       });
 
-      // アイテム設定で有効かつ出現可能な種類数を上限として選択枚数のドロップダウンを生成
       const countSelect = document.getElementById('chanceCountSelect');
       countSelect.innerHTML = '';
       const maxAvailable = availableItems.length;
@@ -1314,7 +1300,6 @@
       }
 
       chanceCards.forEach((card, idx) => {
-        // カードデータに一意のIDを持たせる
         if (!card.id) card.id = 'card-data-' + idx + '-' + Date.now();
 
         const wrapper = document.createElement('div');
@@ -1323,12 +1308,10 @@
 
         wrapper.innerHTML = `
           <div id="card-inner-${card.id}" class="transform-style-3d transition-transform duration-700 w-full h-full relative rounded-2xl shadow-xl ${card.isFlipped ? 'rotate-y-180' : ''}">
-            <!-- 表面 (裏返し前の表示) -->
             <div class="backface-hidden absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-900 border-2 border-amber-500/40 rounded-2xl flex flex-col items-center justify-center p-3 text-center">
               <i data-lucide="shield" class="w-8 h-8 text-amber-400 mb-2"></i>
               <span class="text-xs sm:text-sm font-black text-amber-300">${escapeHtml(card.name)}</span>
             </div>
-            <!-- 裏面 (シャッフル後・神経衰弱裏面) -->
             <div class="backface-hidden rotate-y-180 absolute inset-0 bg-gradient-to-br from-amber-600 to-amber-700 border-2 border-amber-300 rounded-2xl flex flex-col items-center justify-center p-3 text-center shadow-inner">
               <div class="border border-slate-950/30 rounded-xl w-full h-full flex flex-col items-center justify-center bg-slate-950/20">
                 <i data-lucide="sparkles" class="w-6 h-6 text-slate-950 mb-1"></i>
@@ -1339,10 +1322,9 @@
         `;
         grid.appendChild(wrapper);
       });
-      lucide.createIcons();
+      if (window.lucide) lucide.createIcons();
     }
 
-    // ウォッシュシャッフル開始
     function startCardShuffle() {
       if (isShuffled) return;
       if (chanceCards.length === 0) return;
@@ -1350,14 +1332,12 @@
       const btn = document.getElementById('btnShuffleStart');
       btn.disabled = true;
 
-      // 1. まずカードを全て裏面状態（rotate-y-180）にする
       chanceCards.forEach(c => {
         c.isFlipped = true;
         const inner = document.getElementById(`card-inner-${c.id}`);
         if (inner) inner.classList.add('rotate-y-180');
       });
 
-      // 2. ウォッシュシャッフルアニメーション適用
       setTimeout(() => {
         const grid = document.getElementById('cardsGrid');
         const cards = grid.children;
@@ -1378,7 +1358,6 @@
           card.classList.add('animate-wash-shuffle');
         });
 
-        // アニメーション終了後に配置完了＆配列再シャッフルして画面を再描画
         setTimeout(() => {
           Array.from(cards).forEach(card => {
             card.classList.remove('animate-wash-shuffle');
@@ -1386,13 +1365,12 @@
 
           chanceCards.sort(() => Math.random() - 0.5);
           isShuffled = true;
-          renderChanceCards(); // 再並び替え後にDOMとオブジェクトの一致を完全確定
+          renderChanceCards();
           showToast('シャッフル完了！カードを選択してめくってください', 'info');
         }, 1400);
       }, 700);
     }
 
-    // カードをめくる（表に戻す） - IDで直接検索
     function flipChanceCard(cardId) {
       if (!isShuffled) {
         showToast('先に「スタート」を押してシャッフルしてください', 'warning');
@@ -1404,32 +1382,28 @@
         return;
       }
 
-      // 固有IDで対象のカードオブジェクトを厳密に特定
       const card = chanceCards.find(c => c.id === cardId);
       if (!card) return;
 
-      // まだ裏面（未めくり）の場合のみ処理
       if (card.isFlipped) {
         card.isFlipped = false;
         
-        // めくったカード自身のアイテム名をダイレクトに格納
-        chanceRevealedCards.push(card.name);
+        chanceRevealedCards.push(String(card.name));
 
         const cardInner = document.getElementById(`card-inner-${card.id}`);
         if (cardInner) {
           cardInner.classList.remove('rotate-y-180');
         }
 
-        // 設定枚数をめくり終えた場合、自動的に結果確定
         if (chanceRevealedCards.length === maxCount) {
+          showToast('カードを開きました。3秒後に結果を確定します...', 'info');
           setTimeout(() => {
             autoConfirmChanceResults();
-          }, 600);
+          }, 3000);
         }
       }
     }
 
-    // アイテム獲得チャンス結果の自動確定
     function autoConfirmChanceResults() {
       if (chanceRevealedCards.length === 0) return;
 
@@ -1440,20 +1414,21 @@
       const team = game.teams.find(t => t.id === teamId);
       if (!team) return;
 
-      // 確定アイテムを軍に追加
-      team.items.push(...chanceRevealedCards);
+      const acquiredList = [...chanceRevealedCards];
 
-      // 履歴ログに追加
-      addHistoryLog(game, team.name, 'くじ引き獲得', [...chanceRevealedCards]);
+      if (!Array.isArray(team.items)) team.items = [];
+      team.items.push(...acquiredList);
+
+      addHistoryLog(game, team.name, 'くじ引き獲得', acquiredList);
+
+      chanceRevealedCards = [];
 
       saveStateToStorage();
-      showToast(`「${team.name}」が [${chanceRevealedCards.join(', ')}] を獲得しました！`, 'success');
+      showToast(`「${team.name}」が [${acquiredList.join(', ')}] を獲得しました！`, 'success');
 
-      // スコアボードへ戻る
       navigateTo('gameDetail');
     }
 
-    // 途中で離脱した場合の中途確定処理（警告履歴付き）
     function savePartialChanceResultsOnLeave() {
       if (!isShuffled || chanceRevealedCards.length === 0) return;
 
@@ -1468,11 +1443,13 @@
 
       const maxCount = parseInt(document.getElementById('chanceCountSelect').value) || 1;
       if (chanceRevealedCards.length < maxCount) {
-        // 設定数未満の途中で離脱した場合
-        team.items.push(...chanceRevealedCards);
-        addHistoryLog(game, team.name, '⚠️ 中途確定 (離脱)', [...chanceRevealedCards]);
+        const acquiredList = [...chanceRevealedCards];
+        if (!Array.isArray(team.items)) team.items = [];
+        team.items.push(...acquiredList);
+        addHistoryLog(game, team.name, '⚠️ 中途確定 (離脱)', acquiredList);
+        chanceRevealedCards = [];
         saveStateToStorage();
-        showToast(`途中離脱のため [${chanceRevealedCards.join(', ')}] を中途獲得として保存しました`, 'warning');
+        showToast(`途中離脱のため [${acquiredList.join(', ')}] を中途獲得として保存しました`, 'warning');
       }
     }
 
@@ -1510,7 +1487,6 @@
         game.exchangeRecipes = [...DEFAULT_EXCHANGE_RECIPES];
       }
 
-      // 獲得希望ターゲットアイテムの描画
       const targetList = document.getElementById('exchangeTargetList');
       targetList.innerHTML = '';
 
@@ -1537,7 +1513,6 @@
         targetList.appendChild(card);
       });
 
-      // 消費アイテム選択エリアの表示制御
       const costSection = document.getElementById('exchangeCostSection');
       const costList = document.getElementById('exchangeCostItemList');
       costList.innerHTML = '';
@@ -1545,17 +1520,18 @@
       if (!selectedExchangeRecipe) {
         costSection.classList.add('hidden');
         document.getElementById('btnExecuteExchange').disabled = true;
-        lucide.createIcons();
+        if (window.lucide) lucide.createIcons();
         return;
       }
 
       costSection.classList.remove('hidden');
       document.getElementById('requiredCostCount').innerText = selectedExchangeRecipe.costCount;
 
-      if (team.items.length === 0) {
+      const teamItems = team.items || [];
+      if (teamItems.length === 0) {
         costList.innerHTML = `<p class="text-xs text-slate-500 py-2">この軍は交換に使用できる所持アイテムがありません。</p>`;
       } else {
-        team.items.forEach((itemName, itemIdx) => {
+        teamItems.forEach((itemName, itemIdx) => {
           const itemUid = `${itemIdx}-${itemName}`;
           const isChecked = selectedCostItems.includes(itemUid);
 
@@ -1572,14 +1548,13 @@
         });
       }
 
-      // ボタン活性化判定
       const badge = document.getElementById('selectedCostCountBadge');
       badge.innerText = `${selectedCostItems.length} / ${selectedExchangeRecipe.costCount} 選択中`;
 
       const btn = document.getElementById('btnExecuteExchange');
       btn.disabled = !(selectedCostItems.length === selectedExchangeRecipe.costCount);
 
-      lucide.createIcons();
+      if (window.lucide) lucide.createIcons();
     }
 
     function selectExchangeRecipe(recipe) {
@@ -1619,7 +1594,6 @@
         return;
       }
 
-      // インデックスの降順にソートして削除時の配列ずれを防止
       const removeIndices = selectedCostItems
         .map(uid => parseInt(uid.split('-')[0]))
         .sort((a, b) => b - a);
@@ -1630,10 +1604,9 @@
         team.items.splice(idx, 1);
       });
 
-      // 交換獲得アイテムの追加
+      if (!Array.isArray(team.items)) team.items = [];
       team.items.push(selectedExchangeRecipe.name);
 
-      // 履歴追加
       addHistoryLog(game, team.name, 'アイテム交換', [
         `消費: [${consumedItemNames.join(', ')}] ➔ 獲得: [${selectedExchangeRecipe.name}]`
       ]);
@@ -1647,7 +1620,6 @@
     // モーダル ＆ 履歴・管理機能
     // ==========================================
 
-    // 1. 管理モード認証モーダル
     function toggleAdminMode() {
       if (appState.isAdmin) {
         appState.isAdmin = false;
@@ -1680,7 +1652,6 @@
       }
     }
 
-    // 2. アイテム手動追加モーダル
     function openItemAddModal() {
       const game = getCurrentGame();
       if (!game) return;
@@ -1697,7 +1668,6 @@
       const itemSelect = document.getElementById('manualAddItemSelect');
       itemSelect.innerHTML = '';
 
-      // 有効なくじ引きアイテム候補
       game.itemsMaster.filter(i => i.enabled).forEach(i => {
         const opt = document.createElement('option');
         opt.value = i.name;
@@ -1705,7 +1675,6 @@
         itemSelect.appendChild(opt);
       });
 
-      // 交換アイテム候補も選択肢に追加
       if (game.exchangeRecipes) {
         game.exchangeRecipes.forEach(r => {
           const opt = document.createElement('option');
@@ -1731,6 +1700,7 @@
       const team = game.teams.find(t => t.id === teamId);
 
       if (team && itemName) {
+        if (!Array.isArray(team.items)) team.items = [];
         team.items.push(itemName);
         addHistoryLog(game, team.name, '手動付与', [itemName]);
         saveStateToStorage();
@@ -1740,7 +1710,6 @@
       }
     }
 
-    // 3. 履歴モーダル＆履歴追記
     function addHistoryLog(game, teamName, actionType, details) {
       if (!game.history) game.history = [];
       const timeStr = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -1748,7 +1717,7 @@
         time: timeStr,
         teamName,
         actionType,
-        details: details.join(', ')
+        details: Array.isArray(details) ? details.join(', ') : String(details)
       });
     }
 
@@ -1790,7 +1759,6 @@
       document.getElementById('itemHistoryModal').classList.add('hidden');
     }
 
-    // エスケープ関数
     function escapeHtml(str) {
       if (!str) return '';
       return String(str)
