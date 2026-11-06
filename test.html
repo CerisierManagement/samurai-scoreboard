@@ -223,6 +223,10 @@
             <i data-lucide="check-circle" class="w-4 h-4"></i> 合戦確定(次戦へ)
           </button>
 
+          <button onclick="rewindCurrentRound()" class="admin-only hidden bg-amber-700 hover:bg-amber-600 text-white font-bold px-4 py-2.5 rounded-xl text-sm transition flex items-center gap-2" title="直前の合戦ラウンドに巻き戻します">
+            <i data-lucide="rotate-ccw" class="w-4 h-4"></i> 合戦巻き戻し
+          </button>
+
           <button onclick="openItemAddModal()" class="admin-only hidden bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2.5 rounded-xl text-sm transition flex items-center gap-2">
             <i data-lucide="plus-circle" class="w-4 h-4"></i> アイテム手動追加
           </button>
@@ -1133,6 +1137,26 @@
       }
     };
 
+    window.rewindCurrentRound = function() {
+      if (!appState.isAdmin) return;
+      const game = getCurrentGame();
+      if (!game) return;
+
+      const curRound = game.currentRound || 1;
+      if (curRound <= 1) {
+        showToast('第 1 戦より前には巻き戻せません', 'warning');
+        return;
+      }
+
+      if (confirm(`【合戦巻き戻し】\n現在の第 ${curRound} 戦から、直前の「第 ${curRound - 1} 戦」に戻しますか？\n（合戦結果の修正や誤確定のやり直しが可能です）`)) {
+        game.currentRound = curRound - 1;
+        addHistoryLog(game, '全体', '合戦巻き戻し', `第 ${curRound} 戦 ➔ 第 ${game.currentRound} 戦に巻き戻し`, 'score');
+        saveStateToStorage();
+        showToast(`第 ${game.currentRound} 戦に巻き戻しました`, 'info');
+        render();
+      }
+    };
+
     window.removeAllItemsFromTeam = function(event, teamId) {
       if (event) {
         event.preventDefault();
@@ -1469,12 +1493,20 @@
       document.getElementById('btnShuffleStart').disabled = false;
 
       const selectedTeamId = teamSelect.value || (game.teams[0] ? game.teams[0].id : null);
+      const currentRound = game.currentRound || 1;
 
       const existingItemsAll = game.teams.flatMap(t => (t.items || []).map(i => typeof i === 'string' ? i : i.name));
-      const otherTeamsItems = game.teams
+      
+      // 他軍が過去のラウンド（直前まで）に獲得した横取り可能アイテムがあるか確認
+      const hasValidSnatchTarget = game.teams
         .filter(t => t.id !== selectedTeamId)
-        .flatMap(t => t.items || []);
-      const otherTeamsItemCount = otherTeamsItems.length;
+        .some(otherTeam => {
+          return (otherTeam.items || []).some(itemObj => {
+            const obtainedRound = typeof itemObj === 'string' ? 1 : (itemObj.obtainedRound || 1);
+            const isSnatched = typeof itemObj === 'string' ? false : !!itemObj.isSnatched;
+            return obtainedRound < currentRound && !isSnatched;
+          });
+        });
 
       const availableCardList = [];
 
@@ -1483,13 +1515,17 @@
         const isEnabled = typeof i === 'string' ? true : i.enabled;
         const limitCount = typeof i === 'string' ? 0 : (i.limitCount || 0);
 
-        if (!isEnabled) return;
-        
-        if ((itemName === '伝説のサムライ' || itemName === '影武者') && existingItemsAll.includes(itemName)) {
-          return;
+        // 「アイテム横取り」カードの自動出現フィルタ判定
+        if (itemName === 'アイテム横取り') {
+          // 条件A: 1戦目では候補として登場しない
+          if (currentRound <= 1) return;
+          // 条件C: 他軍が過去戦で獲得した横取り可能なアイテムが存在しない場合は登場しない
+          if (!hasValidSnatchTarget) return;
+        } else {
+          if (!isEnabled) return;
         }
         
-        if (itemName === 'アイテム横取り' && otherTeamsItemCount === 0) {
+        if ((itemName === '伝説のサムライ' || itemName === '影武者') && existingItemsAll.includes(itemName)) {
           return;
         }
 
@@ -1783,8 +1819,6 @@
       const statusEl = document.getElementById('snatchCardStatus');
       const container = document.getElementById('snatchTargetItemList');
       container.innerHTML = '';
-      selectedSnatchTarget = null;
-      document.getElementById('btnExecuteSnatch').disabled = true;
 
       if (!team) return;
 
@@ -1794,6 +1828,8 @@
         statusEl.className = 'text-xs mt-1 font-bold text-rose-400';
         statusEl.innerText = '⚠️ 「アイテム横取り」カードを所有していません（申請不可）';
         container.innerHTML = `<p class="col-span-full text-xs text-slate-500 py-4 italic">この軍はアイテム横取りカードを所有していません。</p>`;
+        selectedSnatchTarget = null;
+        document.getElementById('btnExecuteSnatch').disabled = true;
         return;
       }
 
@@ -1823,6 +1859,8 @@
 
       if (availableTargets.length === 0) {
         container.innerHTML = `<p class="col-span-full text-xs text-slate-500 py-4 italic">対象となる他軍の過去アイテム（第 ${curRound - 1} 戦までに獲得されたもの）がありません。</p>`;
+        selectedSnatchTarget = null;
+        document.getElementById('btnExecuteSnatch').disabled = true;
         return;
       }
 
@@ -1835,21 +1873,32 @@
         card.className = `p-3 rounded-xl border cursor-pointer transition flex items-center justify-between ${
           isSelected ? 'bg-rose-950 border-rose-500 shadow-lg' : 'bg-slate-950 border-slate-800 hover:border-slate-700'
         }`;
-        card.onclick = () => selectSnatchTarget(target);
+        
+        card.onclick = (e) => {
+          e.preventDefault();
+          selectSnatchTarget(target);
+        };
 
         card.innerHTML = `
-          <div>
+          <div class="pointer-events-none">
             <span class="text-[10px] font-bold text-slate-400">[${escapeHtml(target.teamName)}] (第${target.obtainedRound}戦獲得)</span>
             <h4 class="font-bold text-white text-sm flex items-center gap-1.5 mt-0.5">
               <i data-lucide="shield" class="w-4 h-4 text-amber-400"></i> ${escapeHtml(target.itemName)}
             </h4>
           </div>
-          <input type="radio" name="snatchTargetRadio" ${isSelected ? 'checked' : ''} class="text-rose-500 focus:ring-rose-500">
+          <input type="radio" name="snatchTargetRadio" ${isSelected ? 'checked' : ''} class="text-rose-500 focus:ring-rose-500 pointer-events-none">
         `;
         container.appendChild(card);
       });
 
+      document.getElementById('btnExecuteSnatch').disabled = !selectedSnatchTarget;
+
       if (window.lucide) lucide.createIcons();
+    };
+
+    window.selectSnatchTarget = function(target) {
+      selectedSnatchTarget = target;
+      renderSnatchTargetItems();
     };
 
     function selectSnatchTarget(target) {
