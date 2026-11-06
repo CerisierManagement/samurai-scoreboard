@@ -11,8 +11,38 @@
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
 
-  <!-- PeerJS (サーバー設定不要・即時P2Pリアルタイム同期ライブラリ) -->
-  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <!-- Firebase Web SDK (v11 Modular / CDN) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+
+    // Firebase 設定
+    const firebaseConfig = {
+      apiKey: "AIzaSyCviaffjR_E3A9bUBu1G50gybiMwa7kxzw",
+      authDomain: "samurai-7c5e8.firebaseapp.com",
+      projectId: "samurai-7c5e8",
+      storageBucket: "samurai-7c5e8.firebasestorage.app",
+      messagingSenderId: "905817986541",
+      appId: "1:905817986541:web:bae3cbc6c40cb72903c3e4",
+      measurementId: "G-PS7LLL5RTR",
+      databaseURL: "https://samurai-7c5e8-default-rtdb.firebaseio.com"
+    };
+
+    // Firebase 初期化
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    // グローバルへバインド
+    window.firebaseDB = db;
+    window.fbRef = ref;
+    window.fbOnValue = onValue;
+    window.fbSet = set;
+
+    // アプリ起動
+    if (window.initFirebaseSync) {
+      window.initFirebaseSync();
+    }
+  </script>
   
   <style>
     body {
@@ -64,10 +94,10 @@
 
       <!-- 右側コントロール (ゲーム選択中のみ有効) -->
       <div id="headerGameControls" class="hidden flex items-center gap-2 sm:gap-4">
-        <!-- リアルタイム同期ステータス表示 -->
+        <!-- クラウド同期ステータス表示 -->
         <div class="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs whitespace-nowrap">
           <span id="syncStatusDot" class="w-2 h-2 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span>
-          <span id="syncStatusText" class="text-slate-300 font-bold hidden sm:inline">P2P同期中</span>
+          <span id="syncStatusText" class="text-slate-300 font-bold hidden sm:inline">Firebase同期中</span>
         </div>
 
         <!-- 管理モード切替スイッチ -->
@@ -101,10 +131,9 @@
         <div>
           <div class="flex items-center gap-3">
             <h1 class="text-3xl font-black text-white tracking-tight">合戦一覧</h1>
-            <!-- トップ画面用 P2P 同期ステータス表示 -->
             <div class="flex items-center bg-slate-900 border border-slate-800 rounded-xl px-3 py-1 text-xs">
               <span id="homeSyncStatusDot" class="w-2 h-2 rounded-full bg-emerald-500 mr-2 animate-pulse"></span>
-              <span id="homeSyncStatusText" class="text-slate-300 font-bold">P2P同期中</span>
+              <span id="homeSyncStatusText" class="text-slate-300 font-bold">Firebase同期中</span>
             </div>
           </div>
           <p class="text-slate-400 text-sm mt-1">開催中の戦いや過去の合戦を選択、または新しく開始します。</p>
@@ -148,9 +177,7 @@
             <span id="teamCountBadge" class="text-xs bg-slate-800 text-amber-400 px-2.5 py-1 rounded-full font-mono font-bold">4 チーム</span>
           </div>
           
-          <div id="teamInputList" class="space-y-3">
-            <!-- チーム入力欄が動的挿入 -->
-          </div>
+          <div id="teamInputList" class="space-y-3"></div>
 
           <div class="flex gap-2 mt-4">
             <button type="button" onclick="addTeamInputRow()" class="flex-1 py-2.5 border border-dashed border-slate-700 hover:border-amber-500/50 hover:bg-slate-800/50 text-slate-400 hover:text-amber-400 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1">
@@ -174,25 +201,21 @@
          [B-2 & C] 作成済み合戦の選択画面 (メインダッシュボード)
     ========================================== -->
     <section id="view-gameDetail" class="space-y-6 hidden">
-      <!-- 上部合戦情報ヘッダー -->
       <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <span class="text-xs font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-3 py-1 rounded-full inline-block mb-2">対戦進行中</span>
           <h1 id="detailGameTitle" class="text-3xl font-black text-white">---</h1>
         </div>
 
-        <!-- ナビゲーションメニュー -->
         <div class="flex flex-wrap items-center gap-2">
           <button onclick="navigateTo('itemChance')" class="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black px-4 py-2.5 rounded-xl text-sm shadow-lg shadow-amber-500/20 transition flex items-center gap-2">
             <i data-lucide="dices" class="w-4 h-4"></i> アイテム獲得チャンス
           </button>
 
-          <!-- 全員が利用可能な「アイテム交換申請」ボタン -->
           <button onclick="navigateTo('itemExchange')" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2.5 rounded-xl text-sm transition flex items-center gap-2">
             <i data-lucide="repeat" class="w-4 h-4"></i> <span id="exchangeBtnLabel">アイテム交換申請</span>
           </button>
           
-          <!-- 管理専用コントロール -->
           <button onclick="openRequestsModal()" class="admin-only hidden bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-4 py-2.5 rounded-xl text-sm transition flex items-center gap-2 relative">
             <i data-lucide="inbox" class="w-4 h-4"></i> 交換申請の承認
             <span id="pendingRequestsBadge" class="hidden absolute -top-2 -right-2 bg-rose-600 text-white text-[10px] font-mono px-2 py-0.5 rounded-full border border-slate-900">0</span>
@@ -220,10 +243,7 @@
         </div>
       </div>
 
-      <!-- チーム一覧 & スコアボード (カード表示) -->
-      <div id="teamCardsContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <!-- Dynamic Team Cards -->
-      </div>
+      <div id="teamCardsContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
     </section>
 
     <!-- ==========================================
@@ -244,9 +264,7 @@
       </div>
 
       <form id="resultInputForm" onsubmit="handleResultSubmit(event)" class="space-y-6">
-        <div id="resultInputFields" class="space-y-4">
-          <!-- Dynamic Input Rows -->
-        </div>
+        <div id="resultInputFields" class="space-y-4"></div>
 
         <div class="flex gap-4 pt-4 border-t border-slate-800">
           <button type="button" onclick="navigateTo('gameDetail')" class="w-1/2 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition">
@@ -270,13 +288,11 @@
         <p class="text-xs text-slate-400 mt-1">くじ引き出現アイテム、および「アイテム交換所」で手に入る対象・必要個数の設定を行います。</p>
       </div>
 
-      <!-- くじ引きアイテム設定 -->
       <div class="space-y-4">
         <label class="block text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
           <i data-lucide="dices" class="w-4 h-4 text-amber-400"></i> くじ引き出現候補アイテム一覧 (ON/OFF)
         </label>
         
-        <!-- 新規アイテム追加フォーム -->
         <div class="flex gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
           <input type="text" id="newItemName" placeholder="新しいくじ引きアイテム名..." class="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-white placeholder-slate-600 text-sm focus:outline-none focus:border-amber-500 transition">
           <button type="button" onclick="addNewConfigItem()" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl transition flex items-center gap-1.5 whitespace-nowrap">
@@ -284,18 +300,14 @@
           </button>
         </div>
 
-        <div id="configItemList" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <!-- Dynamic Items -->
-        </div>
+        <div id="configItemList" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
       </div>
 
-      <!-- アイテム交換レシピ設定 -->
       <div class="space-y-4 pt-6 border-t border-slate-800">
         <label class="block text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
           <i data-lucide="repeat" class="w-4 h-4 text-indigo-400"></i> 交換可能アイテム（レシピ）の設定
         </label>
 
-        <!-- 新規交換レシピ追加フォーム -->
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-slate-950 p-3 rounded-xl border border-slate-800">
           <input type="text" id="newRecipeName" placeholder="獲得アイテム名 (例: 忍者)..." class="sm:col-span-2 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-white placeholder-slate-600 text-sm focus:outline-none focus:border-indigo-500 transition">
           <div class="flex gap-2">
@@ -306,9 +318,7 @@
           </div>
         </div>
 
-        <div id="configRecipeList" class="space-y-2">
-          <!-- Dynamic Exchange Recipes -->
-        </div>
+        <div id="configRecipeList" class="space-y-2"></div>
       </div>
 
       <div class="pt-4 border-t border-slate-800">
@@ -319,7 +329,7 @@
     </section>
 
     <!-- ==========================================
-         [D-2] アイテム獲得チャンス画面 (カードめくり＆ウォッシュシャッフル)
+         [D-2] アイテム獲得チャンス画面
     ========================================== -->
     <section id="view-itemChance" class="space-y-6 hidden">
       <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -341,7 +351,6 @@
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <!-- 設定サイドパネル -->
         <div class="lg:col-span-1 bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-5 h-fit shadow-xl">
           <h3 class="text-sm font-bold text-white border-b border-slate-800 pb-2 flex items-center gap-2">
             <i data-lucide="sliders" class="w-4 h-4 text-amber-400"></i> 獲得条件の設定
@@ -349,30 +358,23 @@
 
           <div>
             <label class="block text-xs font-semibold text-slate-400 mb-2">対象の軍を選択</label>
-            <select id="chanceTeamSelect" onchange="renderItemChance()" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-amber-500 transition">
-              <!-- Dynamic Options -->
-            </select>
+            <select id="chanceTeamSelect" onchange="renderItemChance()" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-amber-500 transition"></select>
           </div>
 
           <div>
             <label class="block text-xs font-semibold text-slate-400 mb-2">めくる枚数設定</label>
-            <select id="chanceCountSelect" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-amber-500 transition">
-              <!-- Dynamic Options -->
-            </select>
+            <select id="chanceCountSelect" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-amber-500 transition"></select>
           </div>
         </div>
 
-        <!-- カード設置メインエリア -->
         <div class="lg:col-span-3 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col items-center justify-center min-h-[420px]">
-          <div id="cardsGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 w-full">
-            <!-- Dynamic Chance Cards -->
-          </div>
+          <div id="cardsGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 w-full"></div>
         </div>
       </div>
     </section>
 
     <!-- ==========================================
-         [D-3] アイテム交換・申請画面 (一般/管理 兼用)
+         [D-3] アイテム交換・申請画面
     ========================================== -->
     <section id="view-itemExchange" class="max-w-3xl mx-auto bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6 hidden">
       <div class="border-b border-slate-800 pb-4 flex items-center justify-between">
@@ -388,29 +390,21 @@
       <div class="space-y-6">
         <div>
           <label class="block text-xs font-bold text-slate-300 mb-2 uppercase tracking-wider">① 交換を行う軍を選択</label>
-          <select id="exchangeTeamSelect" onchange="renderItemExchangeUI()" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500 transition">
-            <!-- Dynamic Options -->
-          </select>
+          <select id="exchangeTeamSelect" onchange="renderItemExchangeUI()" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500 transition"></select>
         </div>
 
-        <!-- ターゲットとなる希望交換アイテム -->
         <div>
           <label class="block text-xs font-bold text-slate-300 mb-2 uppercase tracking-wider">② 交換により獲得したいアイテム</label>
-          <div id="exchangeTargetList" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <!-- Dynamic Target Items -->
-          </div>
+          <div id="exchangeTargetList" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
         </div>
 
-        <!-- 消費アイテム選択領域 -->
         <div id="exchangeCostSection" class="hidden space-y-3 bg-slate-950 p-4 rounded-xl border border-slate-800">
           <div class="flex items-center justify-between">
             <span class="text-xs font-bold text-slate-300">③ 消費する所持アイテムを必要数（<span id="requiredCostCount">3</span>個）選択</span>
             <span id="selectedCostCountBadge" class="text-xs font-bold font-mono text-amber-400">0 / 3 選択中</span>
           </div>
 
-          <div id="exchangeCostItemList" class="flex flex-wrap gap-2 pt-2">
-            <!-- Dynamic Checkboxes -->
-          </div>
+          <div id="exchangeCostItemList" class="flex flex-wrap gap-2 pt-2"></div>
         </div>
 
         <div class="flex gap-4 pt-4 border-t border-slate-800">
@@ -426,11 +420,7 @@
 
   </main>
 
-  <!-- ==========================================
-       モーダル各種
-  ========================================== -->
-
-  <!-- 管理者用：交換申請の承認・棄却モーダル -->
+  <!-- モーダル各種 -->
   <div id="requestsModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
     <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl">
       <div class="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -440,9 +430,7 @@
         <button onclick="closeRequestsModal()" class="text-slate-500 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
       </div>
 
-      <div id="requestsModalList" class="max-h-96 overflow-y-auto space-y-3 pr-1">
-        <!-- Dynamic Pending Requests -->
-      </div>
+      <div id="requestsModalList" class="max-h-96 overflow-y-auto space-y-3 pr-1"></div>
 
       <button onclick="closeRequestsModal()" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition">
         閉じる
@@ -450,7 +438,6 @@
     </div>
   </div>
 
-  <!-- パスワード認証モーダル -->
   <div id="adminAuthModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
     <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full space-y-4 shadow-2xl">
       <div class="flex items-center gap-3 border-b border-slate-800 pb-3">
@@ -468,7 +455,6 @@
     </div>
   </div>
 
-  <!-- アイテム手動追加モーダル（管理専用） -->
   <div id="itemAddModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
     <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
       <div class="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -479,15 +465,11 @@
       </div>
       <div>
         <label class="block text-xs font-semibold text-slate-400 mb-1">付与対象の軍</label>
-        <select id="manualAddTeamSelect" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500">
-          <!-- Dynamic -->
-        </select>
+        <select id="manualAddTeamSelect" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500"></select>
       </div>
       <div>
         <label class="block text-xs font-semibold text-slate-400 mb-1">追加するアイテムを選択</label>
-        <select id="manualAddItemSelect" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500">
-          <!-- Dynamic -->
-        </select>
+        <select id="manualAddItemSelect" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500"></select>
       </div>
       <div class="flex gap-2 pt-2">
         <button onclick="closeItemAddModal()" class="w-1/2 py-2 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs">キャンセル</button>
@@ -496,7 +478,6 @@
     </div>
   </div>
 
-  <!-- アイテム獲得履歴モーダル（管理専用） -->
   <div id="itemHistoryModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
     <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl">
       <div class="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -505,27 +486,22 @@
         </h3>
         <button onclick="closeItemHistoryModal()" class="text-slate-500 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
       </div>
-      <div id="itemHistoryListContainer" class="max-h-80 overflow-y-auto space-y-2 pr-1">
-        <!-- Dynamic History -->
-      </div>
+      <div id="itemHistoryListContainer" class="max-h-80 overflow-y-auto space-y-2 pr-1"></div>
       <button onclick="closeItemHistoryModal()" class="w-full py-2 bg-slate-800 text-slate-300 font-bold rounded-xl text-xs">閉じる</button>
     </div>
   </div>
 
-  <!-- アプリケーション JavaScript -->
   <script>
-    // カラーパレット定義
     const TEAM_COLORS = [
-      { name: '赤軍', hex: '#ef4444', class: 'border-red-500/50 bg-red-500/10 text-red-400' },
-      { name: '青軍', hex: '#3b82f6', class: 'border-blue-500/50 bg-blue-500/10 text-blue-400' },
-      { name: '緑軍', hex: '#10b981', class: 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400' },
-      { name: '黄軍', hex: '#eab308', class: 'border-yellow-500/50 bg-yellow-500/10 text-yellow-400' },
-      { name: '紫軍', hex: '#a855f7', class: 'border-purple-500/50 bg-purple-500/10 text-purple-400' },
-      { name: '桃軍', hex: '#ec4899', class: 'border-pink-500/50 bg-pink-500/10 text-pink-400' },
-      { name: '橙軍', hex: '#f97316', class: 'border-orange-500/50 bg-orange-500/10 text-orange-400' }
+      { name: '赤軍', hex: '#ef4444' },
+      { name: '青軍', hex: '#3b82f6' },
+      { name: '緑軍', hex: '#10b981' },
+      { name: '黄軍', hex: '#eab308' },
+      { name: '紫軍', hex: '#a855f7' },
+      { name: '桃軍', hex: '#ec4899' },
+      { name: '橙軍', hex: '#f97316' }
     ];
 
-    // 初期候補アイテム（くじ引き用：「アイテム横取り」は初期で未チェック=disabled:true）
     const DEFAULT_MASTER_ITEMS = [
       { name: '伝説のサムライ', enabled: true },
       { name: '大人蘇り', enabled: true },
@@ -537,7 +513,6 @@
       { name: '影武者', enabled: true }
     ];
 
-    // 初期交換可能アイテムレシピ
     const DEFAULT_EXCHANGE_RECIPES = [
       { name: '忍者', costCount: 3 },
       { name: '子ども全員蘇り', costCount: 4 },
@@ -545,9 +520,6 @@
       { name: 'アイテム付与', costCount: 3 }
     ];
 
-    const LOCAL_STORAGE_KEY = 'samurai_scoreboard_games_v4';
-
-    // アプリ状態
     let appState = {
       games: [],
       currentGameId: null,
@@ -555,101 +527,71 @@
       isAdmin: false
     };
 
-    // 結果入力モード
     let inputResultMode = 'add';
-
-    // くじ引き用一時状態
     let chanceCards = [];
     let isShuffled = false;
     let chanceRevealedCards = [];
-
-    // アイテム交換一時状態
     let selectedExchangeRecipe = null;
     let selectedCostItems = [];
 
-    // P2P リアルタイム通信管理
-    let peer = null;
-    let peerConnections = [];
-
-    function loadLocalState() {
-      try {
-        const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
-        if (stored) {
-          appState.games = JSON.parse(stored);
-        }
-      } catch (e) {
-        console.error("Local storage load error:", e);
+    // --- Firebase データ変換・標準化ヘルパー ---
+    function firebaseValueToArray(val) {
+      if (!val) return [];
+      if (Array.isArray(val)) return val;
+      if (typeof val === 'object') {
+        return Object.keys(val).sort((a,b) => {
+          const na = Number(a), nb = Number(b);
+          if (Number.isInteger(na) && Number.isInteger(nb)) return na - nb;
+          return a.localeCompare(b);
+        }).map(k => val[k]);
       }
+      return [];
     }
 
-    function saveStateToStorage() {
-      try {
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(appState.games));
-      } catch (e) {}
-
-      peerConnections.forEach(conn => {
-        if (conn && conn.open) {
-          conn.send({ type: 'SYNC_GAMES', games: appState.games });
-        }
-      });
+    function normalizeGame(g) {
+      if (!g || typeof g !== 'object') return null;
+      return {
+        ...g,
+        teams: firebaseValueToArray(g.teams).filter(Boolean).map(t => ({
+          ...t,
+          score: Number(t.score) || 0,
+          kills: Number(t.kills) || 0,
+          items: firebaseValueToArray(t.items).filter(i => i != null)
+        })),
+        itemsMaster: firebaseValueToArray(g.itemsMaster).filter(Boolean),
+        exchangeRecipes: firebaseValueToArray(g.exchangeRecipes).filter(Boolean),
+        requests: firebaseValueToArray(g.requests).filter(Boolean),
+        history: firebaseValueToArray(g.history).filter(Boolean)
+      };
     }
 
-    function initP2PSync() {
-      const peerId = 'samurai-scoreboard-room-master';
-      try {
-        peer = new Peer(peerId);
-        peer.on('open', () => {
-          updateSyncStatus('ホストとして接続中', 'emerald');
-        });
-        peer.on('connection', (conn) => {
-          peerConnections.push(conn);
-          conn.on('open', () => {
-            conn.send({ type: 'SYNC_GAMES', games: appState.games });
-          });
-          conn.on('data', (data) => handleReceivedP2PData(data));
-          conn.on('close', () => {
-            peerConnections = peerConnections.filter(c => c !== conn);
-          });
-        });
-        peer.on('error', (err) => {
-          if (err.type === 'unavailable-id') {
-            connectAsClient(peerId);
-          }
-        });
-      } catch (e) {
-        console.warn("PeerJS connection skipped");
-      }
-    }
+    // --- Firebase リアルタイム同期リスナー ---
+    window.initFirebaseSync = function() {
+      const db = window.firebaseDB;
+      if (!db) return;
 
-    function connectAsClient(hostId) {
-      try {
-        peer = new Peer();
-        peer.on('open', () => {
-          const conn = peer.connect(hostId);
-          peerConnections.push(conn);
-          conn.on('open', () => {
-            updateSyncStatus('リアルタイム同期中', 'emerald');
-          });
-          conn.on('data', (data) => handleReceivedP2PData(data));
-          conn.on('close', () => {
-            updateSyncStatus('同期切断', 'amber');
-          });
-        });
-      } catch (e) {}
-    }
-
-    function handleReceivedP2PData(data) {
-      if (data && data.type === 'SYNC_GAMES' && Array.isArray(data.games)) {
-        appState.games = data.games;
-        try {
-          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(appState.games));
-        } catch(e) {}
+      const gamesRef = window.fbRef(db, 'games');
+      window.fbOnValue(gamesRef, (snapshot) => {
+        const raw = snapshot.val();
+        appState.games = firebaseValueToArray(raw).map(normalizeGame).filter(Boolean);
 
         if (appState.currentGameId && !appState.games.some(g => g.id === appState.currentGameId)) {
           appState.currentGameId = null;
           appState.currentView = 'home';
         }
         render();
+        updateSyncStatus('Firebase同期中', 'emerald');
+      }, (error) => {
+        console.error("Firebase sync error:", error);
+        updateSyncStatus('同期エラー', 'rose');
+      });
+    };
+
+    function saveStateToStorage() {
+      const db = window.firebaseDB;
+      if (db) {
+        const gamesRef = window.fbRef(db, 'games');
+        window.fbSet(gamesRef, appState.games);
       }
     }
 
@@ -666,8 +608,6 @@
     }
 
     window.onload = function() {
-      loadLocalState();
-      try { initP2PSync(); } catch (e) {}
       render();
     };
 
@@ -789,9 +729,6 @@
       }, 3000);
     }
 
-    // ==========================================
-    // [A] ホーム画面描画
-    // ==========================================
     function renderHome() {
       const container = document.getElementById('gameListContainer');
       container.innerHTML = '';
@@ -843,9 +780,6 @@
       });
     }
 
-    // ==========================================
-    // [B-1] 新規ゲーム作成処理
-    // ==========================================
     let createTeamRows = [
       { name: '赤軍', color: '#ef4444' },
       { name: '青軍', color: '#3b82f6' },
@@ -927,7 +861,7 @@
           kills: 0,
           items: []
         })),
-        itemsMaster: DEFAULT_MASTER_ITEMS.map(item => typeof item === 'string' ? { name: item, enabled: true } : { ...item }),
+        itemsMaster: DEFAULT_MASTER_ITEMS.map(item => ({ ...item })),
         exchangeRecipes: [...DEFAULT_EXCHANGE_RECIPES],
         requests: [],
         history: []
@@ -939,9 +873,6 @@
       navigateTo('gameDetail', newGame.id);
     }
 
-    // ==========================================
-    // 管理者専用 2段階確認の合戦削除
-    // ==========================================
     function confirmDeleteGameFromAdmin() {
       if (!appState.isAdmin) {
         showToast('合戦の削除は管理モード認証時のみ実行可能です', 'warning');
@@ -961,9 +892,6 @@
       }
     }
 
-    // ==========================================
-    // [B-2] ゲームメイン画面（ダッシュボード）
-    // ==========================================
     function renderGameDetail() {
       const game = getCurrentGame();
       if (!game) return;
@@ -985,7 +913,6 @@
       });
 
       const teamRanks = [];
-
       sortedTeams.forEach((team, idx) => {
         if (idx > 0) {
           const prev = sortedTeams[idx - 1];
@@ -1096,9 +1023,6 @@
       }
     }
 
-    // ==========================================
-    // [C-1] スコア・撃破数入力画面
-    // ==========================================
     function setInputMode(mode) {
       inputResultMode = mode;
       const addBtn = document.getElementById('modeAddBtn');
@@ -1174,9 +1098,6 @@
       navigateTo('gameDetail');
     }
 
-    // ==========================================
-    // [D-1] アイテム設定画面
-    // ==========================================
     function renderItemConfig() {
       const game = getCurrentGame();
       if (!game) return;
@@ -1319,9 +1240,6 @@
       showToast(`「${removed[0].name}」のレシピを削除しました`, 'info');
     }
 
-    // ==========================================
-    // [D-2] アイテム獲得チャンス（カードめくり）
-    // ==========================================
     function renderItemChance() {
       const game = getCurrentGame();
       if (!game) return;
@@ -1344,8 +1262,6 @@
       const selectedTeamId = teamSelect.value || (game.teams[0] ? game.teams[0].id : null);
 
       const existingItemsAll = game.teams.flatMap(t => t.items || []);
-      
-      // 他の軍（選択中の軍以外）が所持しているアイテムの合計数
       const otherTeamsItems = game.teams
         .filter(t => t.id !== selectedTeamId)
         .flatMap(t => t.items || []);
@@ -1356,12 +1272,9 @@
         const isEnabled = typeof i === 'string' ? true : i.enabled;
 
         if (!isEnabled) return false;
-        
-        // 「伝説のサムライ」「影武者」は全体で1つでもあれば除外
         if ((itemName === '伝説のサムライ' || itemName === '影武者') && existingItemsAll.includes(itemName)) {
           return false;
         }
-        // 「アイテム横取り」は【選択軍以外の他軍】が1つ以上所持している場合のみ出現
         if (itemName === 'アイテム横取り' && otherTeamsItemCount === 0) {
           return false;
         }
@@ -1492,7 +1405,6 @@
 
       if (card.isFlipped) {
         card.isFlipped = false;
-        
         chanceRevealedCards.push(String(card.name));
 
         const cardInner = document.getElementById(`card-inner-${card.id}`);
@@ -1525,12 +1437,10 @@
       team.items.push(...acquiredList);
 
       addHistoryLog(game, team.name, 'くじ引き獲得', acquiredList);
-
       chanceRevealedCards = [];
 
       saveStateToStorage();
       showToast(`「${team.name}」が [${acquiredList.join(', ')}] を獲得しました！`, 'success');
-
       navigateTo('gameDetail');
     }
 
@@ -1558,9 +1468,6 @@
       }
     }
 
-    // ==========================================
-    // [D-3] アイテム交換・申請機能
-    // ==========================================
     function initItemExchangeScreen() {
       const game = getCurrentGame();
       if (!game) return;
@@ -1575,7 +1482,6 @@
         teamSelect.appendChild(opt);
       });
 
-      // 管理モード／一般申請モードのUI表示切り替え
       const titleEl = document.getElementById('exchangePageTitle');
       const subTitleEl = document.getElementById('exchangePageSubtitle');
       const badgeEl = document.getElementById('exchangeModeBadge');
@@ -1652,7 +1558,6 @@
       costSection.classList.remove('hidden');
       document.getElementById('requiredCostCount').innerText = selectedExchangeRecipe.costCount;
 
-      // 現在未承認の申請で使用中のアイテムUIDリストを取得してロックする
       const pendingUsedItemUids = new Set();
       if (Array.isArray(game.requests)) {
         game.requests.forEach(req => {
@@ -1745,7 +1650,6 @@
       const consumedItemNames = removeIndices.map(idx => team.items[idx]);
 
       if (appState.isAdmin) {
-        // 【管理者モード】：即時直接交換
         removeIndices.forEach(idx => {
           team.items.splice(idx, 1);
         });
@@ -1760,7 +1664,6 @@
         showToast(`「${team.name}」のアイテム直接交換を適用しました！`, 'success');
         navigateTo('gameDetail');
       } else {
-        // 【一般モード】：申請キューに追加
         if (!Array.isArray(game.requests)) game.requests = [];
         
         const newRequest = {
@@ -1780,9 +1683,6 @@
       }
     }
 
-    // ==========================================
-    // 交換申請の承認・棄却モーダル機能 (管理専用)
-    // ==========================================
     function openRequestsModal() {
       if (!appState.isAdmin) return;
       renderRequestsModalList();
@@ -1844,7 +1744,6 @@
 
       const team = game.teams.find(t => t.id === req.teamId);
       if (team) {
-        // UIDまたはアイテム名から確実に消費分を削除
         const removeIndices = (req.consumedItemUids || [])
           .map(uid => parseInt(uid.split('-')[0]))
           .sort((a, b) => b - a);
@@ -1858,7 +1757,6 @@
           }
         });
 
-        // インデックス不一致時のフォールバック削除
         if (!successRemoved && Array.isArray(req.consumedItems)) {
           req.consumedItems.forEach(cName => {
             const idx = team.items.indexOf(cName);
@@ -1896,9 +1794,6 @@
       render();
     }
 
-    // ==========================================
-    // モーダル ＆ 履歴・管理機能
-    // ==========================================
     function toggleAdminMode() {
       if (appState.isAdmin) {
         appState.isAdmin = false;
