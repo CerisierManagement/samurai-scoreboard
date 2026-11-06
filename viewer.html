@@ -10,8 +10,34 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
-  <!-- PeerJS -->
-  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+  <!-- Firebase Web SDK (v11 Modular / CDN) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCviaffjR_E3A9bUBu1G50gybiMwa7kxzw",
+      authDomain: "samurai-7c5e8.firebaseapp.com",
+      projectId: "samurai-7c5e8",
+      storageBucket: "samurai-7c5e8.firebasestorage.app",
+      messagingSenderId: "905817986541",
+      appId: "1:905817986541:web:bae3cbc6c40cb72903c3e4",
+      measurementId: "G-PS7LLL5RTR",
+      databaseURL: "https://samurai-7c5e8-default-rtdb.firebaseio.com"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    window.firebaseDB = db;
+    window.fbRef = ref;
+    window.fbOnValue = onValue;
+
+    if (window.initFirebaseSync) {
+      window.initFirebaseSync();
+    }
+  </script>
 
   <style>
     body { font-family: 'Inter', 'Noto Sans JP', sans-serif; }
@@ -30,15 +56,13 @@
       </div>
 
       <div class="flex items-center gap-3">
-        <!-- 閲覧専用バッジ -->
         <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-400 border border-slate-700 flex items-center gap-1">
           <i data-lucide="eye" class="w-3.5 h-3.5 text-amber-400"></i> 閲覧専用
         </span>
 
-        <!-- リアルタイム同期ステータス -->
         <div class="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs whitespace-nowrap">
           <span id="syncStatusDot" class="w-2 h-2 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span>
-          <span id="syncStatusText" class="text-slate-300 font-bold hidden sm:inline">P2P同期中</span>
+          <span id="syncStatusText" class="text-slate-300 font-bold hidden sm:inline">Firebase同期中</span>
         </div>
 
         <button id="btnHome" onclick="navigateTo('home')" class="hidden p-2 hover:bg-slate-800 rounded-xl transition text-slate-400 hover:text-white" title="合戦一覧へ戻る">
@@ -50,14 +74,13 @@
 
   <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
 
-    <!-- [A] 合戦一覧（閲覧用） -->
     <section id="view-home" class="space-y-8">
       <div class="border-b border-slate-800 pb-6">
         <div class="flex items-center gap-3">
           <h1 class="text-3xl font-black text-white tracking-tight">合戦一覧</h1>
           <div class="flex items-center bg-slate-900 border border-slate-800 rounded-xl px-3 py-1 text-xs">
             <span id="homeSyncStatusDot" class="w-2 h-2 rounded-full bg-emerald-500 mr-2 animate-pulse"></span>
-            <span id="homeSyncStatusText" class="text-slate-300 font-bold">P2P同期中</span>
+            <span id="homeSyncStatusText" class="text-slate-300 font-bold">Firebase同期中</span>
           </div>
         </div>
         <p class="text-slate-400 text-sm mt-1">現在開催中の合戦スコア状況をリアルタイムで閲覧できます。</p>
@@ -66,7 +89,6 @@
       <div id="gameListContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
     </section>
 
-    <!-- [B] 合戦詳細ダッシュボード（閲覧用） -->
     <section id="view-gameDetail" class="space-y-6 hidden">
       <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -81,56 +103,62 @@
   </main>
 
   <script>
-    const LOCAL_STORAGE_KEY = 'samurai_scoreboard_games_v4';
-
     let appState = {
       games: [],
       currentGameId: null,
       currentView: 'home'
     };
 
-    let peer = null;
-    let peerConnections = [];
-
-    function loadLocalState() {
-      try {
-        const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
-        if (stored) appState.games = JSON.parse(stored);
-      } catch (e) {}
+    function firebaseValueToArray(val) {
+      if (!val) return [];
+      if (Array.isArray(val)) return val;
+      if (typeof val === 'object') {
+        return Object.keys(val).sort((a,b) => {
+          const na = Number(a), nb = Number(b);
+          if (Number.isInteger(na) && Number.isInteger(nb)) return na - nb;
+          return a.localeCompare(b);
+        }).map(k => val[k]);
+      }
+      return [];
     }
 
-    function initP2PSync() {
-      const hostId = 'samurai-scoreboard-room-master';
-      try {
-        peer = new Peer();
-        peer.on('open', () => {
-          const conn = peer.connect(hostId);
-          peerConnections.push(conn);
-          conn.on('open', () => {
-            updateSyncStatus('リアルタイム同期中', 'emerald');
-          });
-          conn.on('data', (data) => handleReceivedP2PData(data));
-          conn.on('close', () => {
-            updateSyncStatus('同期切断', 'amber');
-          });
-        });
-      } catch (e) {}
+    function normalizeGame(g) {
+      if (!g || typeof g !== 'object') return null;
+      return {
+        ...g,
+        teams: firebaseValueToArray(g.teams).filter(Boolean).map(t => ({
+          ...t,
+          score: Number(t.score) || 0,
+          kills: Number(t.kills) || 0,
+          items: firebaseValueToArray(t.items).filter(i => i != null)
+        })),
+        itemsMaster: firebaseValueToArray(g.itemsMaster).filter(Boolean),
+        exchangeRecipes: firebaseValueToArray(g.exchangeRecipes).filter(Boolean),
+        requests: firebaseValueToArray(g.requests).filter(Boolean),
+        history: firebaseValueToArray(g.history).filter(Boolean)
+      };
     }
 
-    function handleReceivedP2PData(data) {
-      if (data && data.type === 'SYNC_GAMES' && Array.isArray(data.games)) {
-        appState.games = data.games;
-        try {
-          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(appState.games));
-        } catch(e) {}
+    window.initFirebaseSync = function() {
+      const db = window.firebaseDB;
+      if (!db) return;
+
+      const gamesRef = window.fbRef(db, 'games');
+      window.fbOnValue(gamesRef, (snapshot) => {
+        const raw = snapshot.val();
+        appState.games = firebaseValueToArray(raw).map(normalizeGame).filter(Boolean);
 
         if (appState.currentGameId && !appState.games.some(g => g.id === appState.currentGameId)) {
           appState.currentGameId = null;
           appState.currentView = 'home';
         }
         render();
-      }
-    }
+        updateSyncStatus('Firebase同期中', 'emerald');
+      }, (error) => {
+        console.error("Firebase sync error:", error);
+        updateSyncStatus('同期エラー', 'rose');
+      });
+    };
 
     function updateSyncStatus(text, color) {
       const dot = document.getElementById('syncStatusDot');
@@ -145,8 +173,6 @@
     }
 
     window.onload = function() {
-      loadLocalState();
-      try { initP2PSync(); } catch (e) {}
       render();
     };
 
