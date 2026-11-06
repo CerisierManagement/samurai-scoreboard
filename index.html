@@ -573,7 +573,18 @@
       const gamesRef = window.fbRef(db, 'games');
       window.fbOnValue(gamesRef, (snapshot) => {
         const raw = snapshot.val();
-        appState.games = firebaseValueToArray(raw).map(normalizeGame).filter(Boolean);
+        if (raw !== null) {
+          appState.games = firebaseValueToArray(raw).map(normalizeGame).filter(Boolean);
+        } else {
+          // Firebase上にデータがまだない場合はローカルバックアップから復元を試みる
+          try {
+            const localBackup = localStorage.getItem('samurai_scoreboard_backup');
+            if (localBackup) {
+              appState.games = JSON.parse(localBackup).map(normalizeGame).filter(Boolean);
+              saveStateToStorage(); // Firebaseへ初期データを送信
+            }
+          } catch(e) {}
+        }
 
         if (appState.currentGameId && !appState.games.some(g => g.id === appState.currentGameId)) {
           appState.currentGameId = null;
@@ -588,10 +599,27 @@
     };
 
     function saveStateToStorage() {
+      // 1. ローカルバックアップ（リロード時のデータ消失を確実に防ぐ）
+      try {
+        localStorage.setItem('samurai_scoreboard_backup', JSON.stringify(appState.games));
+      } catch (e) {}
+
+      // 2. Firebase クラウドDBへのリアルタイム送信
       const db = window.firebaseDB;
       if (db) {
         const gamesRef = window.fbRef(db, 'games');
-        window.fbSet(gamesRef, appState.games);
+        // Firebaseでエラーが発生しないよう純粋なJSONオブジェクトへクリーン化
+        const cleanData = JSON.parse(JSON.stringify(appState.games || []));
+        
+        window.fbSet(gamesRef, cleanData)
+          .then(() => {
+            updateSyncStatus('Firebase同期中', 'emerald');
+          })
+          .catch((err) => {
+            console.error("Firebase write error:", err);
+            updateSyncStatus('書き込み失敗', 'amber');
+            showToast('クラウドへの保存に失敗しました。Firebaseのルール設定を確認してください', 'error');
+          });
       }
     }
 
