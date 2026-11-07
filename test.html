@@ -1054,26 +1054,27 @@
         } else {
           itemsHtml = `<div class="flex flex-wrap gap-2">`;
           
-          // アクティブな所持アイテムの表示
+          // アクティブな所持アイテムの表示 (横取りした側には元軍のカラーバッジ＆枠線を確実に表示)
           activeItems.forEach(itemObj => {
             const itemName = itemObj.name;
             let snatchedStyle = 'bg-slate-950 border-slate-800 text-amber-300';
             let stolenBadge = '';
             let customStyle = '';
 
-            if (itemObj.stolenFromTeamId) {
+            if (itemObj.stolenFromTeamId || itemObj.stolenFromTeamName) {
               const fromTeam = game.teams.find(t => t.id === itemObj.stolenFromTeamId);
-              const color = fromTeam ? fromTeam.color : '#eab308';
+              const color = fromTeam ? fromTeam.color : '#ef4444';
               const fromName = fromTeam ? fromTeam.name : (itemObj.stolenFromTeamName || '他軍');
-              snatchedStyle = `bg-slate-950 text-amber-300 shadow-sm`;
-              stolenBadge = `<span class="text-[9px] px-1.5 py-0.5 rounded font-bold text-slate-950" style="background-color: ${color}">${escapeHtml(fromName)}より横取り</span>`;
-              customStyle = `border-color: ${color}; border-width: 1.5px;`;
+              
+              snatchedStyle = `bg-slate-950 text-amber-300 shadow-md`;
+              stolenBadge = `<span class="text-[10px] px-2 py-0.5 rounded font-black text-slate-950 ml-1 shadow-sm" style="background-color: ${color}">${escapeHtml(fromName)}より横取り</span>`;
+              customStyle = `border-color: ${color}; border-width: 2px;`;
             }
 
             itemsHtml += `
-              <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold border ${snatchedStyle}" style="${customStyle}">
+              <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border ${snatchedStyle}" style="${customStyle}">
                 <i data-lucide="shield" class="w-3.5 h-3.5 text-amber-400"></i>
-                ${escapeHtml(itemName)}
+                <span>${escapeHtml(itemName)}</span>
                 ${stolenBadge}
                 ${appState.isAdmin ? `
                   <button onclick="removeTeamItemByName('${team.id}', '${escapeHtml(itemName)}')" class="ml-1 text-slate-500 hover:text-rose-400" title="1つ削除">
@@ -1084,16 +1085,16 @@
             `;
           });
 
-          // 横取り被害にあったアイテム（所持枠からは削除され、末尾に灰色＋線で履歴表示）
+          // 横取り被害にあったアイテム (所持数から除外され、枠末尾に灰色＋打消線＋被害履歴バッジを表示)
           lostItems.forEach(lostObj => {
             const stolenByTeam = game.teams.find(t => t.id === lostObj.stolenByTeamId);
             const stolenByName = stolenByTeam ? stolenByTeam.name : (lostObj.stolenByTeamName || '他軍');
 
             itemsHtml += `
-              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-950/60 border border-slate-800/60 rounded-xl text-xs font-semibold text-slate-500 line-through opacity-75" title="「${escapeHtml(stolenByName)}」に横取りされたアイテム">
-                <i data-lucide="shield-off" class="w-3 h-3 text-slate-600"></i>
-                ${escapeHtml(lostObj.name)}
-                <span class="text-[9px] text-rose-400/80 no-underline font-normal">(${escapeHtml(stolenByName)}へ横取り済)</span>
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-950/80 border border-slate-800/80 rounded-xl text-xs font-medium text-slate-500 line-through opacity-70" title="「${escapeHtml(stolenByName)}」に横取りされたアイテム">
+                <i data-lucide="shield-off" class="w-3.5 h-3.5 text-slate-600"></i>
+                <span>${escapeHtml(lostObj.name)}</span>
+                <span class="text-[9px] text-rose-400/90 no-underline font-bold bg-rose-950/60 border border-rose-800/60 px-1.5 py-0.5 rounded ml-0.5">(${escapeHtml(stolenByName)}へ横取り済)</span>
               </span>
             `;
           });
