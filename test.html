@@ -602,7 +602,12 @@
             }
             return {
               name: item.name,
-              round: Number(item.round) || 1
+              round: Number(item.round) || 1,
+              isLost: !!item.isLost,
+              stolenFromTeamId: item.stolenFromTeamId || null,
+              stolenFromTeamName: item.stolenFromTeamName || null,
+              stolenByTeamId: item.stolenByTeamId || null,
+              stolenByTeamName: item.stolenByTeamName || null
             };
           })
         })),
@@ -1030,7 +1035,7 @@
 
         const teamItems = team.items || [];
         
-        // 通常所持アイテム / 横取り被害アイテム（灰色表示用）の分離
+        // ① 横取りされた側のアイテムを「所持アイテム」から完全除外
         const activeItems = [];
         const lostItems = [];
 
@@ -1054,7 +1059,7 @@
         } else {
           itemsHtml = `<div class="flex flex-wrap gap-2">`;
           
-          // アクティブな所持アイテムの表示 (横取りした側には元軍のカラーバッジ＆枠線を確実に表示)
+          // ② 横取りした側のアイテム：元チームのカラーで枠線と「〇〇軍より横取り」バッジを表示
           activeItems.forEach(itemObj => {
             const itemName = itemObj.name;
             let snatchedStyle = 'bg-slate-950 border-slate-800 text-amber-300';
@@ -1085,7 +1090,7 @@
             `;
           });
 
-          // 横取り被害にあったアイテム (所持数から除外され、枠末尾に灰色＋打消線＋被害履歴バッジを表示)
+          // ① 横取りされた側のアイテム：所持数カウントから除外され、末尾に打消線・灰色背景で形跡のみ表示
           lostItems.forEach(lostObj => {
             const stolenByTeam = game.teams.find(t => t.id === lostObj.stolenByTeamId);
             const stolenByName = stolenByTeam ? stolenByTeam.name : (lostObj.stolenByTeamName || '他軍');
