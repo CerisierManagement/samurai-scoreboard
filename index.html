@@ -190,49 +190,49 @@
     </section>
 
     <!-- [B-2 & C] 作成済み合戦の選択画面 (メインダッシュボード) -->
-    <section id="view-gameDetail" class="space-y-6 hidden">
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-        <!-- タイトル・ラウンド表示エリア（レイアウト調整） -->
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800/80 pb-4 gap-2">
+    <section id="view-gameDetail" class="space-y-4 sm:space-y-4 hidden">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-3">
+        <!-- タイトル・ラウンド表示エリア（PC画面でよりコンパクトに調整） -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800/80 pb-3 gap-2">
           <div class="flex items-center gap-3">
-            <span id="currentRoundBadge" class="text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30 px-3.5 py-1.5 rounded-full font-mono shadow-sm">第 1 戦目</span>
-            <h1 id="detailGameTitle" class="text-2xl sm:text-3xl font-black text-white tracking-tight">---</h1>
+            <span id="currentRoundBadge" class="text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30 px-3 py-1 rounded-full font-mono shadow-sm">第 1 戦目</span>
+            <h1 id="detailGameTitle" class="text-xl sm:text-2xl font-black text-white tracking-tight">---</h1>
           </div>
         </div>
 
-        <!-- 操作ボタンエリア（複数列で綺麗に整列） -->
-        <div class="flex flex-wrap items-center gap-2 pt-1">
-          <button onclick="navigateTo('itemChance')" class="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black px-4 py-2.5 rounded-xl text-sm shadow-lg shadow-amber-500/20 transition flex items-center gap-2">
+        <!-- 操作ボタンエリア（余白・サイズ感を調整） -->
+        <div class="flex flex-wrap items-center gap-2 pt-0.5">
+          <button onclick="navigateTo('itemChance')" class="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black px-4 py-2 rounded-xl text-sm shadow-lg shadow-amber-500/20 transition flex items-center gap-2">
             <i data-lucide="dices" class="w-4 h-4"></i> アイテム獲得チャンス
           </button>
 
           <!-- 非管理モード時のみ「アイテム交換申請」表示 -->
-          <button id="btnItemExchangeApply" onclick="navigateTo('itemExchange')" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2.5 rounded-xl text-sm transition flex items-center gap-2">
+          <button id="btnItemExchangeApply" onclick="navigateTo('itemExchange')" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2 rounded-xl text-sm transition flex items-center gap-2">
             <i data-lucide="repeat" class="w-4 h-4"></i> アイテム交換・横取り申請
           </button>
           
-          <button onclick="openRequestsModal()" class="admin-only hidden bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-4 py-2.5 rounded-xl text-sm transition flex items-center gap-2 relative">
+          <button onclick="openRequestsModal()" class="admin-only hidden bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-4 py-2 rounded-xl text-sm transition flex items-center gap-2 relative">
             <i data-lucide="inbox" class="w-4 h-4"></i> 交換・横取り申請の承認
             <span id="pendingRequestsBadge" class="hidden absolute -top-2 -right-2 bg-rose-600 text-white text-[10px] font-mono px-2 py-0.5 rounded-full border border-slate-900">0</span>
           </button>
 
-          <button onclick="advanceRound()" class="admin-only hidden bg-emerald-600 hover:bg-emerald-500 text-white font-black px-4 py-2.5 rounded-xl text-sm transition flex items-center gap-2 shadow-md">
+          <button onclick="advanceRound()" class="admin-only hidden bg-emerald-600 hover:bg-emerald-500 text-white font-black px-4 py-2 rounded-xl text-sm transition flex items-center gap-2 shadow-md">
             <i data-lucide="chevrons-right" class="w-4 h-4"></i> 合戦確定(次戦へ)
           </button>
 
-          <button onclick="rewindRound()" class="admin-only hidden bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 font-bold px-3 py-2.5 rounded-xl text-sm transition flex items-center gap-1.5" title="前の合戦ラウンドへ戻す">
+          <button onclick="rewindRound()" class="admin-only hidden bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 font-bold px-3 py-2 rounded-xl text-sm transition flex items-center gap-1.5" title="前の合戦ラウンドへ戻す">
             <i data-lucide="rotate-ccw" class="w-4 h-4 text-amber-400"></i> 合戦巻き戻し
           </button>
 
-          <button onclick="navigateTo('resultInput')" class="admin-only hidden bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 font-bold px-4 py-2.5 rounded-xl text-sm transition flex items-center gap-2">
+          <button onclick="navigateTo('resultInput')" class="admin-only hidden bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 font-bold px-4 py-2 rounded-xl text-sm transition flex items-center gap-2">
             <i data-lucide="edit-3" class="w-4 h-4"></i> 合戦結果入力
           </button>
 
-          <button onclick="openItemAddModal()" class="admin-only hidden bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/30 font-bold px-4 py-2.5 rounded-xl text-sm transition flex items-center gap-2">
+          <button onclick="openItemAddModal()" class="admin-only hidden bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/30 font-bold px-4 py-2 rounded-xl text-sm transition flex items-center gap-2">
             <i data-lucide="plus-circle" class="w-4 h-4"></i> アイテム手動追加
           </button>
 
-          <button onclick="navigateTo('itemConfig')" class="admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-4 py-2.5 rounded-xl text-sm transition flex items-center gap-2">
+          <button onclick="navigateTo('itemConfig')" class="admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-4 py-2 rounded-xl text-sm transition flex items-center gap-2">
             <i data-lucide="settings" class="w-4 h-4"></i> アイテム設定
           </button>
 
