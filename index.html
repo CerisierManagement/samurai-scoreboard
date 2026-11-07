@@ -95,7 +95,7 @@
         <!-- クラウド同期ステータス表示 -->
         <div class="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs whitespace-nowrap">
           <span id="syncStatusDot" class="w-2 h-2 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span>
-          <span id="syncStatusText" class="text-slate-300 font-bold hidden sm:inline">Firebase同期中</span>
+          <span id="syncStatusText" class="text-slate-300 font-bold hidden sm:inline">同期中</span>
         </div>
 
         <!-- 管理モード切替スイッチ -->
@@ -129,7 +129,7 @@
             <h1 class="text-3xl font-black text-white tracking-tight">合戦一覧</h1>
             <div class="flex items-center bg-slate-900 border border-slate-800 rounded-xl px-3 py-1 text-xs">
               <span id="homeSyncStatusDot" class="w-2 h-2 rounded-full bg-emerald-500 mr-2 animate-pulse"></span>
-              <span id="homeSyncStatusText" class="text-slate-300 font-bold">Firebase同期中</span>
+              <span id="homeSyncStatusText" class="text-slate-300 font-bold">同期中</span>
             </div>
           </div>
           <p class="text-slate-400 text-sm mt-1">開催中の戦いや過去の合戦を選択、または新しく開始します。</p>
@@ -191,16 +191,17 @@
 
     <!-- [B-2 & C] 作成済み合戦の選択画面 (メインダッシュボード) -->
     <section id="view-gameDetail" class="space-y-6 hidden">
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div class="flex items-center gap-2 mb-2">
-            <span class="text-xs font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-3 py-1 rounded-full">対戦進行中</span>
-            <span id="currentRoundBadge" class="text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-3 py-1 rounded-full font-mono">第 1 戦目</span>
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+        <!-- タイトル・ラウンド表示エリア（レイアウト調整） -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800/80 pb-4 gap-2">
+          <div class="flex items-center gap-3">
+            <span id="currentRoundBadge" class="text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30 px-3.5 py-1.5 rounded-full font-mono shadow-sm">第 1 戦目</span>
+            <h1 id="detailGameTitle" class="text-2xl sm:text-3xl font-black text-white tracking-tight">---</h1>
           </div>
-          <h1 id="detailGameTitle" class="text-3xl font-black text-white">---</h1>
         </div>
 
-        <div class="flex flex-wrap items-center gap-2">
+        <!-- 操作ボタンエリア（複数列で綺麗に整列） -->
+        <div class="flex flex-wrap items-center gap-2 pt-1">
           <button onclick="navigateTo('itemChance')" class="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black px-4 py-2.5 rounded-xl text-sm shadow-lg shadow-amber-500/20 transition flex items-center gap-2">
             <i data-lucide="dices" class="w-4 h-4"></i> アイテム獲得チャンス
           </button>
@@ -215,7 +216,7 @@
             <span id="pendingRequestsBadge" class="hidden absolute -top-2 -right-2 bg-rose-600 text-white text-[10px] font-mono px-2 py-0.5 rounded-full border border-slate-900">0</span>
           </button>
 
-          <button onclick="advanceRound()" class="admin-only hidden bg-emerald-600 hover:bg-emerald-500 text-white font-black px-4 py-2.5 rounded-xl text-sm transition flex items-center gap-2">
+          <button onclick="advanceRound()" class="admin-only hidden bg-emerald-600 hover:bg-emerald-500 text-white font-black px-4 py-2.5 rounded-xl text-sm transition flex items-center gap-2 shadow-md">
             <i data-lucide="chevrons-right" class="w-4 h-4"></i> 合戦確定(次戦へ)
           </button>
 
@@ -603,7 +604,12 @@
             }
             return {
               name: item.name,
-              round: Number(item.round) || 1
+              round: Number(item.round) || 1,
+              isLost: !!item.isLost,
+              stolenFromTeamId: item.stolenFromTeamId || null,
+              stolenFromTeamName: item.stolenFromTeamName || null,
+              stolenByTeamId: item.stolenByTeamId || null,
+              stolenByTeamName: item.stolenByTeamName || null
             };
           })
         })),
@@ -665,14 +671,15 @@
     }
 
     function updateSyncStatus(text, color) {
+      const cleanText = text.replace('Firebase', '').trim();
       const dot = document.getElementById('syncStatusDot');
       const txt = document.getElementById('syncStatusText');
-      if (txt) txt.innerText = text;
+      if (txt) txt.innerText = cleanText;
       if (dot) dot.className = `w-2 h-2 rounded-full bg-${color}-500 mr-1.5 animate-pulse`;
 
       const homeDot = document.getElementById('homeSyncStatusDot');
       const homeTxt = document.getElementById('homeSyncStatusText');
-      if (homeTxt) homeTxt.innerText = text;
+      if (homeTxt) homeTxt.innerText = cleanText;
       if (homeDot) homeDot.className = `w-2 h-2 rounded-full bg-${color}-500 mr-2 animate-pulse`;
     }
 
@@ -1030,12 +1037,19 @@
         if (rank === 3) rankBadge = `<span class="px-3 py-1 rounded-full text-xs font-black bg-amber-700 text-white">3位</span>`;
 
         const teamItems = team.items || [];
-        const totalItemCount = teamItems.length;
+        
+        // ① 横取りされた側のアイテムを「所持アイテム」から完全除外
+        const activeItems = [];
+        const lostItems = [];
 
-        const itemCounts = {};
         teamItems.forEach(itemObj => {
-          const name = typeof itemObj === 'string' ? itemObj : itemObj.name;
-          itemCounts[name] = (itemCounts[name] || 0) + 1;
+          if (typeof itemObj === 'string') {
+            activeItems.push({ name: itemObj, round: 1 });
+          } else if (itemObj.isLost) {
+            lostItems.push(itemObj);
+          } else {
+            activeItems.push(itemObj);
+          }
         });
 
         const card = document.createElement('div');
@@ -1043,17 +1057,56 @@
         card.style.borderTop = `4px solid ${team.color}`;
 
         let itemsHtml = '';
-        const itemKeys = Object.keys(itemCounts);
-        if (itemKeys.length === 0) {
+        if (activeItems.length === 0 && lostItems.length === 0) {
           itemsHtml = `<p class="text-xs text-slate-500 italic">なし</p>`;
         } else {
           itemsHtml = `<div class="flex flex-wrap gap-2">`;
-          itemKeys.forEach(itemName => {
-            const count = itemCounts[itemName];
+          
+          // ② 横取りした側のアイテム：同名かつ同一元所有軍ごとにグループ化して「×n」まとめ表示
+          const groupedActiveItems = [];
+          activeItems.forEach(itemObj => {
+            const name = itemObj.name;
+            const fromId = itemObj.stolenFromTeamId || null;
+            const fromName = itemObj.stolenFromTeamName || null;
+
+            const existing = groupedActiveItems.find(g => 
+              g.name === name && g.stolenFromTeamId === fromId && g.stolenFromTeamName === fromName
+            );
+            if (existing) {
+              existing.count += 1;
+            } else {
+              groupedActiveItems.push({
+                name,
+                stolenFromTeamId: fromId,
+                stolenFromTeamName: fromName,
+                count: 1
+              });
+            }
+          });
+
+          groupedActiveItems.forEach(itemGroup => {
+            const itemName = itemGroup.name;
+            const count = itemGroup.count;
+            let snatchedStyle = 'bg-slate-950 border-slate-800 text-amber-300';
+            let stolenBadge = '';
+            let customStyle = '';
+
+            if (itemGroup.stolenFromTeamId || itemGroup.stolenFromTeamName) {
+              const fromTeam = game.teams.find(t => t.id === itemGroup.stolenFromTeamId);
+              const color = fromTeam ? fromTeam.color : '#ef4444';
+              const fromName = fromTeam ? fromTeam.name : (itemGroup.stolenFromTeamName || '他軍');
+              
+              snatchedStyle = `bg-slate-950 text-amber-300 shadow-md`;
+              stolenBadge = `<span class="text-[10px] px-2 py-0.5 rounded font-black text-slate-950 ml-1 shadow-sm" style="background-color: ${color}">${escapeHtml(fromName)}より横取り</span>`;
+              customStyle = `border-color: ${color}; border-width: 2px;`;
+            }
+
             itemsHtml += `
-              <span class="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold text-amber-300">
+              <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border ${snatchedStyle}" style="${customStyle}">
                 <i data-lucide="shield" class="w-3.5 h-3.5 text-amber-400"></i>
-                ${escapeHtml(itemName)} ${count > 1 ? `<span class="font-mono text-amber-400">×${count}</span>` : ''}
+                <span>${escapeHtml(itemName)}</span>
+                ${count > 1 ? `<span class="font-mono text-amber-400 font-black">×${count}</span>` : ''}
+                ${stolenBadge}
                 ${appState.isAdmin ? `
                   <button onclick="removeTeamItemByName('${team.id}', '${escapeHtml(itemName)}')" class="ml-1 text-slate-500 hover:text-rose-400" title="1つ削除">
                     <i data-lucide="x" class="w-3.5 h-3.5"></i>
@@ -1062,6 +1115,21 @@
               </span>
             `;
           });
+
+          // ① 横取りされた側のアイテム：所持数カウントから除外され、末尾に打消線・灰色背景で形跡のみ表示
+          lostItems.forEach(lostObj => {
+            const stolenByTeam = game.teams.find(t => t.id === lostObj.stolenByTeamId);
+            const stolenByName = stolenByTeam ? stolenByTeam.name : (lostObj.stolenByTeamName || '他軍');
+
+            itemsHtml += `
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-950/80 border border-slate-800/80 rounded-xl text-xs font-medium text-slate-500 line-through opacity-70" title="「${escapeHtml(stolenByName)}」に横取りされたアイテム">
+                <i data-lucide="shield-off" class="w-3.5 h-3.5 text-slate-600"></i>
+                <span>${escapeHtml(lostObj.name)}</span>
+                <span class="text-[9px] text-rose-400/90 no-underline font-bold bg-rose-950/60 border border-rose-800/60 px-1.5 py-0.5 rounded ml-0.5">(${escapeHtml(stolenByName)}へ横取り済)</span>
+              </span>
+            `;
+          });
+
           itemsHtml += `</div>`;
         }
 
@@ -1090,8 +1158,8 @@
               <div class="flex items-center justify-between">
                 <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">獲得アイテム一覧</span>
                 <div class="flex items-center gap-2">
-                  <span class="text-xs font-bold text-amber-400 font-mono bg-slate-950 px-2 py-0.5 rounded-lg border border-slate-800">合計: ${totalItemCount}個</span>
-                  ${appState.isAdmin && totalItemCount > 0 ? `
+                  <span class="text-xs font-bold text-amber-400 font-mono bg-slate-950 px-2 py-0.5 rounded-lg border border-slate-800">所持: ${activeItems.length}個</span>
+                  ${appState.isAdmin && teamItems.length > 0 ? `
                     <button type="button" onclick="removeAllItemsFromTeam(event, '${team.id}')" class="text-slate-500 hover:text-rose-400 p-1 rounded transition flex items-center gap-1 bg-slate-950/80 border border-slate-800 hover:border-rose-500/50" title="この軍の所持アイテムを全削除">
                       <i data-lucide="trash-2" class="w-3.5 h-3.5 text-rose-400"></i>
                       <span class="text-[10px] text-rose-400 font-bold">全削減</span>
@@ -1865,6 +1933,11 @@
       game.teams.forEach(t => {
         if (t.id === myTeamId) return;
         (t.items || []).forEach((itemObj, itemIdx) => {
+          // すでに横取り済みのダミー履歴アイテム（isLost）は横取り申請の候補から外す
+          if (typeof itemObj === 'object' && itemObj.isLost) {
+            return;
+          }
+
           const name = typeof itemObj === 'string' ? itemObj : itemObj.name;
           const round = typeof itemObj === 'string' ? 1 : (itemObj.round || 1);
           
@@ -1882,134 +1955,54 @@
 
       if (validTargetItems.length === 0) {
         container.innerHTML = `
-          <div class="col-span-full p-4 rounded-xl border border-slate-800 bg-slate-950 text-slate-400 text-xs text-center italic">
-            前合戦（第 ${curRound - 1} 戦目まで）に他軍が獲得した横取り可能なアイテムはありません。
+          <div class="col-span-full p-4 rounded-xl border border-slate-800 bg-slate-950 text-slate-500 text-xs text-center italic">
+            前合戦までに他軍が獲得した横取り可能なアイテムがありません。
           </div>
         `;
+        if (window.lucide) lucide.createIcons();
         return;
       }
 
       validTargetItems.forEach(target => {
         const isSelected = selectedSnatchTarget && selectedSnatchTarget.itemUid === target.itemUid && selectedSnatchTarget.teamId === target.teamId;
-        const div = document.createElement('div');
-        div.className = `p-3 rounded-xl border cursor-pointer transition flex items-center justify-between ${
-          isSelected ? 'bg-rose-950/80 border-rose-500 shadow-lg' : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+        
+        const card = document.createElement('div');
+        card.className = `p-4 rounded-xl border cursor-pointer transition flex items-center justify-between ${
+          isSelected ? 'bg-rose-950/60 border-rose-500 shadow-lg' : 'bg-slate-950 border-slate-800 hover:border-slate-700'
         }`;
         
-        // カード全体のタップで選択できるようにイベントハンドラを設定
-        div.addEventListener('click', () => {
+        card.onclick = (e) => {
+          e.preventDefault();
           selectSnatchTarget(target);
-        });
+        };
 
-        div.innerHTML = `
-          <div class="space-y-0.5 pointer-events-none">
-            <div class="flex items-center gap-2">
-              <span class="text-xs font-bold text-amber-400">${escapeHtml(target.teamName)}</span>
-              <span class="text-[10px] font-mono bg-slate-900 border border-slate-800 text-slate-400 px-1.5 py-0.5 rounded">第 ${target.round} 戦目獲得</span>
+        card.innerHTML = `
+          <div class="flex items-center gap-3 pointer-events-none">
+            <div class="p-2 rounded-lg ${isSelected ? 'bg-rose-600 text-white' : 'bg-slate-900 text-rose-400'}">
+              <i data-lucide="hand" class="w-5 h-5"></i>
             </div>
-            <div class="text-sm font-black text-white flex items-center gap-1.5">
-              <i data-lucide="shield" class="w-4 h-4 text-amber-400"></i>
-              ${escapeHtml(target.itemName)}
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-amber-400">${escapeHtml(target.teamName)}</span>
+                <span class="text-[10px] text-slate-500 font-mono">第${target.round}戦獲得</span>
+              </div>
+              <h4 class="font-bold text-white text-sm mt-0.5">${escapeHtml(target.itemName)}</h4>
             </div>
           </div>
-          <input type="radio" name="snatchTargetRadio" ${isSelected ? 'checked' : ''} class="text-rose-500 focus:ring-rose-500 pointer-events-none">
+          <input type="radio" name="snatchTarget" ${isSelected ? 'checked' : ''} class="text-rose-500 focus:ring-rose-500 pointer-events-none">
         `;
-        container.appendChild(div);
+        container.appendChild(card);
       });
+
       if (window.lucide) lucide.createIcons();
     };
 
     function selectSnatchTarget(target) {
       selectedSnatchTarget = target;
-      const btn = document.getElementById('btnExecuteSnatch');
-      if (btn) btn.disabled = false;
       renderSnatchTargetItems();
     }
 
-    function selectExchangeRecipe(recipe) {
-      selectedExchangeRecipe = recipe;
-      selectedCostItems = [];
-      renderItemExchangeUI();
-    }
-
-    window.toggleCostItemSelection = function(itemUid) {
-      if (!selectedExchangeRecipe) return;
-
-      const idx = selectedCostItems.indexOf(itemUid);
-      if (idx !== -1) {
-        selectedCostItems.splice(idx, 1);
-      } else {
-        if (selectedCostItems.length >= selectedExchangeRecipe.costCount) {
-          showToast(`選択可能な最大個数（${selectedExchangeRecipe.costCount}個）に達しています`, 'warning');
-          return;
-        }
-        selectedCostItems.push(itemUid);
-      }
-      renderItemExchangeUI();
-    };
-
-    function executeItemExchange() {
-      if (!selectedExchangeRecipe) return;
-
-      const game = getCurrentGame();
-      if (!game) return;
-
-      const teamId = document.getElementById('exchangeTeamSelect').value;
-      const team = game.teams.find(t => t.id === teamId);
-      if (!team) return;
-
-      if (selectedCostItems.length !== selectedExchangeRecipe.costCount) {
-        showToast('必要個数のアイテムを選択してください', 'warning');
-        return;
-      }
-
-      const removeIndices = selectedCostItems
-        .map(uid => parseInt(uid.split('-')[0]))
-        .sort((a, b) => b - a);
-
-      const consumedItemNames = removeIndices.map(idx => {
-        const itemObj = team.items[idx];
-        return typeof itemObj === 'string' ? itemObj : itemObj.name;
-      });
-
-      const curRound = game.currentRound || 1;
-
-      if (appState.isAdmin) {
-        removeIndices.forEach(idx => {
-          team.items.splice(idx, 1);
-        });
-        if (!Array.isArray(team.items)) team.items = [];
-        team.items.push({ name: selectedExchangeRecipe.name, round: curRound });
-
-        addHistoryLog(game, team.name, 'アイテム交換', [
-          `消費: [${consumedItemNames.join(', ')}] ➔ 獲得: [${selectedExchangeRecipe.name}]`
-        ], 'item');
-
-        saveStateToStorage();
-        showToast(`「${team.name}」のアイテム直接交換を適用しました！`, 'success');
-        navigateTo('gameDetail');
-      } else {
-        if (!Array.isArray(game.requests)) game.requests = [];
-        
-        const newRequest = {
-          id: 'req-' + Date.now(),
-          type: 'exchange',
-          time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
-          teamId: team.id,
-          teamName: team.name,
-          targetItem: selectedExchangeRecipe.name,
-          consumedItems: consumedItemNames,
-          consumedItemUids: [...selectedCostItems]
-        };
-
-        game.requests.push(newRequest);
-        saveStateToStorage();
-        showToast(`管理者へ「${selectedExchangeRecipe.name}」への交換申請を送信しました！`, 'success');
-        navigateTo('gameDetail');
-      }
-    }
-
-    window.executeItemSnatch = function() {
+    function executeItemSnatch() {
       if (!selectedSnatchTarget) {
         showToast('横取り対象のアイテムを選択してください', 'warning');
         return;
@@ -2018,56 +2011,57 @@
       const game = getCurrentGame();
       if (!game) return;
 
-      const myTeamId = document.getElementById('snatchMyTeamSelect')?.value;
+      const myTeamId = document.getElementById('snatchMyTeamSelect').value;
       const myTeam = game.teams.find(t => t.id === myTeamId);
-      if (!myTeam) return;
+      const targetTeam = game.teams.find(t => t.id === selectedSnatchTarget.teamId);
 
-      const targetTeamId = selectedSnatchTarget.teamId;
-      const targetTeam = game.teams.find(t => t.id === targetTeamId);
-      const targetTeamName = targetTeam ? targetTeam.name : (selectedSnatchTarget.teamName || '他軍');
+      if (!myTeam || !targetTeam) return;
+
       const targetItemName = selectedSnatchTarget.itemName || '';
-      const targetItemUid = selectedSnatchTarget.itemUid || '';
-
-      if (!targetItemName) {
-        showToast('選択された対象アイテム情報が無効です', 'error');
-        return;
-      }
 
       if (appState.isAdmin) {
-        if (targetTeam) {
-          const itemIdx = targetTeam.items.findIndex((itemObj, i) => {
-            const name = typeof itemObj === 'string' ? itemObj : itemObj.name;
-            const uid = `${i}-${name}`;
-            return uid === targetItemUid || name === targetItemName;
-          });
+        // 対象軍からアイテムを削除し、isLost履歴として保存
+        const targetItemIdx = (targetTeam.items || []).findIndex((i, idx) => {
+          const name = typeof i === 'string' ? i : i.name;
+          const uid = `${idx}-${name}`;
+          return uid === selectedSnatchTarget.itemUid || name === targetItemName;
+        });
 
-          if (itemIdx !== -1) {
-            const [stolenItem] = targetTeam.items.splice(itemIdx, 1);
-            if (!Array.isArray(myTeam.items)) myTeam.items = [];
-            
-            myTeam.items.push({
-              name: typeof stolenItem === 'string' ? stolenItem : stolenItem.name,
-              round: game.currentRound || 1
-            });
-
-            // 横取りカードの消費
-            const snatchCardIdx = myTeam.items.findIndex(item => (typeof item === 'string' ? item : item.name) === 'アイテム横取り');
-            if (snatchCardIdx !== -1) {
-              myTeam.items.splice(snatchCardIdx, 1);
-            }
-
-            addHistoryLog(game, myTeam.name, '直接横取り', [
-              `「${targetTeamName}」から [${targetItemName}] を横取り獲得 (横取りカード消費)`
-            ], 'item');
-
-            saveStateToStorage();
-            showToast(`「${myTeam.name}」が「${targetTeamName}」から [${targetItemName}] を横取りしました！`, 'success');
-            selectedSnatchTarget = null;
-            navigateTo('gameDetail');
-          } else {
-            showToast('対象アイテムが既に存在しません', 'error');
-          }
+        if (targetItemIdx !== -1) {
+          targetTeam.items.splice(targetItemIdx, 1);
         }
+
+        // ダミー履歴を追加
+        if (!Array.isArray(targetTeam.items)) targetTeam.items = [];
+        targetTeam.items.push({
+          name: targetItemName,
+          isLost: true,
+          stolenByTeamId: myTeam.id,
+          stolenByTeamName: myTeam.name
+        });
+
+        // 自軍へアイテム追加
+        if (!Array.isArray(myTeam.items)) myTeam.items = [];
+        myTeam.items.push({
+          name: targetItemName,
+          round: game.currentRound || 1,
+          stolenFromTeamId: targetTeam.id,
+          stolenFromTeamName: targetTeam.name
+        });
+
+        // 自軍の「アイテム横取り」カードを1枚消費
+        const snatchCardIdx = myTeam.items.findIndex(i => (typeof i === 'string' ? i : i.name) === 'アイテム横取り' && !i.isLost);
+        if (snatchCardIdx !== -1) {
+          myTeam.items.splice(snatchCardIdx, 1);
+        }
+
+        addHistoryLog(game, myTeam.name, 'アイテム横取り', [
+          `対象: 「${targetTeam.name}」の [${targetItemName}] を横取り`
+        ], 'item');
+
+        saveStateToStorage();
+        showToast(`「${myTeam.name}」が「${targetTeam.name}」から [${targetItemName}] を横取りしました！`, 'success');
+        navigateTo('gameDetail');
       } else {
         if (!Array.isArray(game.requests)) game.requests = [];
 
@@ -2077,51 +2071,28 @@
           time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
           teamId: myTeam.id,
           teamName: myTeam.name,
-          targetTeamId: targetTeamId,
-          targetTeamName: targetTeamName,
-          targetItemUid: targetItemUid,
-          targetItemName: targetItemName
+          targetTeamId: targetTeam.id,
+          targetTeamName: targetTeam.name,
+          targetItem: targetItemName,
+          targetItemUid: selectedSnatchTarget.itemUid
         };
 
         game.requests.push(newRequest);
         saveStateToStorage();
-        showToast(`「${targetTeamName}」の [${targetItemName}] 横取り申請を送信しました！`, 'success');
-        selectedSnatchTarget = null;
+        showToast(`「${targetTeam.name}」の [${targetItemName}] 横取り申請を管理者へ送信しました！`, 'success');
         navigateTo('gameDetail');
       }
-    };
+    }
 
-    window.submitManualItemAdd = function() {
-      const game = getCurrentGame();
-      if (!game) return;
-
-      const teamId = document.getElementById('manualAddTeamSelect').value;
-      const itemName = document.getElementById('manualAddItemSelect').value;
-      const team = game.teams.find(t => t.id === teamId);
-
-      if (team && itemName) {
-        if (!Array.isArray(team.items)) team.items = [];
-        team.items.push({
-          name: itemName,
-          round: game.currentRound || 1
-        });
-        addHistoryLog(game, team.name, '手動付与', [itemName], 'item');
-        saveStateToStorage();
-        closeItemAddModal();
-        render();
-        showToast(`「${team.name}」に [${itemName}] を手動付与しました`, 'success');
-      }
-    };
-
-    window.openRequestsModal = function() {
+    function openRequestsModal() {
       if (!appState.isAdmin) return;
       renderRequestsModalList();
       document.getElementById('requestsModal').classList.remove('hidden');
-    };
+    }
 
-    window.closeRequestsModal = function() {
+    function closeRequestsModal() {
       document.getElementById('requestsModal').classList.add('hidden');
-    };
+    }
 
     function renderRequestsModalList() {
       const game = getCurrentGame();
@@ -2130,51 +2101,61 @@
       const container = document.getElementById('requestsModalList');
       container.innerHTML = '';
 
-      const requests = Array.isArray(game.requests) ? game.requests : [];
-
-      if (requests.length === 0) {
-        container.innerHTML = `<p class="text-xs text-slate-500 py-8 text-center italic">現在承認待ちの交換・横取り申請はありません。</p>`;
+      if (!Array.isArray(game.requests) || game.requests.length === 0) {
+        container.innerHTML = `<p class="text-xs text-slate-500 py-8 text-center italic">現在承認待ちの申請はありません。</p>`;
         return;
       }
 
-      requests.forEach(req => {
+      game.requests.forEach(req => {
         const div = document.createElement('div');
-        div.className = 'bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3';
+        div.className = 'p-4 rounded-xl border border-slate-800 bg-slate-950 space-y-3';
 
         if (req.type === 'snatch') {
           div.innerHTML = `
-            <div class="flex items-center justify-between">
-              <span class="text-xs font-bold text-rose-400 border border-rose-500/30 bg-rose-500/10 px-2.5 py-0.5 rounded-full">横取り申請</span>
-              <span class="text-slate-500 font-mono text-[10px]">${req.time || ''}</span>
+            <div class="flex items-center justify-between border-b border-slate-800/80 pb-2">
+              <span class="text-xs font-black text-rose-400 font-mono">${escapeHtml(req.teamName)} (横取り申請)</span>
+              <span class="text-[10px] text-slate-500 font-mono">${req.time}</span>
             </div>
+
             <div class="text-xs space-y-1">
-              <div class="text-white font-bold"><span class="text-amber-400">${escapeHtml(req.teamName)}</span> ➔ <span class="text-slate-400">${escapeHtml(req.targetTeamName)}</span></div>
-              <div class="text-slate-300">対象アイテム: <span class="font-bold text-amber-300">[${escapeHtml(req.targetItemName)}]</span></div>
+              <div class="text-slate-300">対象軍: <span class="font-bold text-amber-400">${escapeHtml(req.targetTeamName)}</span></div>
+              <div class="text-slate-300">横取り希望アイテム: <span class="font-bold text-rose-400">[${escapeHtml(req.targetItem)}]</span></div>
             </div>
+
             <div class="flex gap-2 pt-1">
-              <button onclick="rejectRequest('${req.id}')" class="w-1/2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-lg text-xs transition">却下</button>
-              <button onclick="approveRequest('${req.id}')" class="w-1/2 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-lg text-xs transition">承認する</button>
+              <button onclick="rejectRequest('${req.id}')" class="w-1/2 py-2 bg-slate-800 hover:bg-slate-700 text-rose-400 font-bold rounded-xl text-xs transition">
+                棄却
+              </button>
+              <button onclick="approveRequest('${req.id}')" class="w-1/2 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs transition shadow-md">
+                承認して適用
+              </button>
             </div>
           `;
         } else {
           div.innerHTML = `
-            <div class="flex items-center justify-between">
-              <span class="text-xs font-bold text-indigo-400 border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-0.5 rounded-full">通常交換申請</span>
-              <span class="text-slate-500 font-mono text-[10px]">${req.time || ''}</span>
+            <div class="flex items-center justify-between border-b border-slate-800/80 pb-2">
+              <span class="text-xs font-black text-indigo-400 font-mono">${escapeHtml(req.teamName)} (交換申請)</span>
+              <span class="text-[10px] text-slate-500 font-mono">${req.time}</span>
             </div>
+
             <div class="text-xs space-y-1">
-              <div class="text-white font-bold">申請軍: <span class="text-amber-400">${escapeHtml(req.teamName)}</span></div>
-              <div class="text-slate-300">獲得希望: <span class="font-bold text-indigo-300">[${escapeHtml(req.targetItem)}]</span></div>
-              <div class="text-slate-400 text-[11px]">消費アイテム: [${(req.consumedItems || []).map(escapeHtml).join(', ')}]</div>
+              <div class="text-slate-300">希望獲得: <span class="font-bold text-emerald-400">[${escapeHtml(req.targetItem)}]</span></div>
+              <div class="text-slate-400">消費選択: <span class="text-slate-200">[${escapeHtml((req.consumedItems || []).join(', '))}]</span></div>
             </div>
+
             <div class="flex gap-2 pt-1">
-              <button onclick="rejectRequest('${req.id}')" class="w-1/2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-lg text-xs transition">却下</button>
-              <button onclick="approveRequest('${req.id}')" class="w-1/2 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-lg text-xs transition">承認する</button>
+              <button onclick="rejectRequest('${req.id}')" class="w-1/2 py-2 bg-slate-800 hover:bg-slate-700 text-rose-400 font-bold rounded-xl text-xs transition">
+                棄却
+              </button>
+              <button onclick="approveRequest('${req.id}')" class="w-1/2 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs transition shadow-md">
+                承認して適用
+              </button>
             </div>
           `;
         }
         container.appendChild(div);
       });
+      if (window.lucide) lucide.createIcons();
     }
 
     window.approveRequest = function(reqId) {
@@ -2190,39 +2171,46 @@
         const targetTeam = game.teams.find(t => t.id === req.targetTeamId);
 
         if (myTeam && targetTeam) {
-          const itemIdx = targetTeam.items.findIndex((item, i) => {
-            const name = typeof item === 'string' ? item : item.name;
-            const uid = `${i}-${name}`;
-            return uid === req.targetItemUid || name === req.targetItemName;
+          const targetItemIdx = (targetTeam.items || []).findIndex((i, idx) => {
+            const name = typeof i === 'string' ? i : i.name;
+            const uid = `${idx}-${name}`;
+            return uid === req.targetItemUid || name === req.targetItem;
           });
 
-          if (itemIdx !== -1) {
-            const [stolenItem] = targetTeam.items.splice(itemIdx, 1);
-            if (!Array.isArray(myTeam.items)) myTeam.items = [];
-            
-            myTeam.items.push({
-              name: typeof stolenItem === 'string' ? stolenItem : stolenItem.name,
-              round: game.currentRound || 1
-            });
-
-            // 横取りカードの消費
-            const snatchCardIdx = myTeam.items.findIndex(item => (typeof item === 'string' ? item : item.name) === 'アイテム横取り');
-            if (snatchCardIdx !== -1) {
-              myTeam.items.splice(snatchCardIdx, 1);
-            }
-
-            addHistoryLog(game, myTeam.name, '横取り承認', [
-              `「${targetTeam.name}」から [${req.targetItemName}] を横取り獲得 (横取りカード消費)`
-            ], 'item');
-
-            game.requests.splice(reqIdx, 1);
-            saveStateToStorage();
-            showToast(`「${myTeam.name}」の横取り申請を承認しました！`, 'success');
-            renderRequestsModalList();
-            render();
-          } else {
-            showToast('対象アイテムが既に存在しないため承認できませんでした', 'error');
+          if (targetItemIdx !== -1) {
+            targetTeam.items.splice(targetItemIdx, 1);
           }
+
+          if (!Array.isArray(targetTeam.items)) targetTeam.items = [];
+          targetTeam.items.push({
+            name: req.targetItem,
+            isLost: true,
+            stolenByTeamId: myTeam.id,
+            stolenByTeamName: myTeam.name
+          });
+
+          if (!Array.isArray(myTeam.items)) myTeam.items = [];
+          myTeam.items.push({
+            name: req.targetItem,
+            round: game.currentRound || 1,
+            stolenFromTeamId: targetTeam.id,
+            stolenFromTeamName: targetTeam.name
+          });
+
+          const snatchCardIdx = myTeam.items.findIndex(i => (typeof i === 'string' ? i : i.name) === 'アイテム横取り' && !i.isLost);
+          if (snatchCardIdx !== -1) {
+            myTeam.items.splice(snatchCardIdx, 1);
+          }
+
+          addHistoryLog(game, myTeam.name, '横取り承認', [
+            `対象: 「${targetTeam.name}」の [${req.targetItem}] を横取り`
+          ], 'item');
+
+          game.requests.splice(reqIdx, 1);
+          saveStateToStorage();
+          showToast(`「${myTeam.name}」の横取り申請を承認・適用しました！`, 'success');
+          renderRequestsModalList();
+          render();
         }
       } else {
         const team = game.teams.find(t => t.id === req.teamId);
@@ -2231,11 +2219,21 @@
             .map(uid => parseInt(uid.split('-')[0]))
             .sort((a, b) => b - a);
 
+          let successRemoved = true;
           removeIndices.forEach(idx => {
             if (team.items && team.items[idx]) {
               team.items.splice(idx, 1);
+            } else {
+              successRemoved = false;
             }
           });
+
+          if (!successRemoved && Array.isArray(req.consumedItems)) {
+            req.consumedItems.forEach(cName => {
+              const idx = team.items.findIndex(i => (typeof i === 'string' ? i : i.name) === cName);
+              if (idx !== -1) team.items.splice(idx, 1);
+            });
+          }
 
           if (!Array.isArray(team.items)) team.items = [];
           team.items.push({
@@ -2243,13 +2241,13 @@
             round: game.currentRound || 1
           });
 
-          addHistoryLog(game, team.name, '交換承認', [
+          addHistoryLog(game, team.name, '申請承認', [
             `消費: [${(req.consumedItems || []).join(', ')}] ➔ 獲得: [${req.targetItem}]`
           ], 'item');
 
           game.requests.splice(reqIdx, 1);
           saveStateToStorage();
-          showToast(`「${team.name}」の交換申請を承認しました！`, 'success');
+          showToast(`「${team.name}」の交換申請を承認・適用しました！`, 'success');
           renderRequestsModalList();
           render();
         }
@@ -2266,7 +2264,7 @@
 
       game.requests.splice(reqIdx, 1);
       saveStateToStorage();
-      showToast(`「${req.teamName}」の申請を却下しました`, 'info');
+      showToast(`「${req.teamName}」の申請を棄却しました`, 'info');
       renderRequestsModalList();
       render();
     };
@@ -2341,6 +2339,28 @@
 
     function closeItemAddModal() {
       document.getElementById('itemAddModal').classList.add('hidden');
+    }
+
+    function submitManualItemAdd() {
+      const game = getCurrentGame();
+      if (!game) return;
+
+      const teamId = document.getElementById('manualAddTeamSelect').value;
+      const itemName = document.getElementById('manualAddItemSelect').value;
+      const team = game.teams.find(t => t.id === teamId);
+
+      if (team && itemName) {
+        if (!Array.isArray(team.items)) team.items = [];
+        team.items.push({
+          name: itemName,
+          round: game.currentRound || 1
+        });
+        addHistoryLog(game, team.name, '手動付与', [itemName], 'item');
+        saveStateToStorage();
+        closeItemAddModal();
+        render();
+        showToast(`「${team.name}」に [${itemName}] を手動付与しました`, 'success');
+      }
     }
 
     function addHistoryLog(game, teamName, actionType, details, category = 'item') {
