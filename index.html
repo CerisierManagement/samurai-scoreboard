@@ -1779,6 +1779,27 @@
       }
     };
 
+    function selectExchangeRecipe(recipe) {
+      selectedExchangeRecipe = recipe;
+      selectedCostItems = [];
+      renderItemExchangeUI();
+    }
+
+    function toggleCostItemSelection(itemUid) {
+      if (!selectedExchangeRecipe) return;
+      const index = selectedCostItems.indexOf(itemUid);
+      if (index > -1) {
+        selectedCostItems.splice(index, 1);
+      } else {
+        if (selectedCostItems.length < selectedExchangeRecipe.costCount) {
+          selectedCostItems.push(itemUid);
+        } else {
+          showToast(`消費できるアイテムは最大 ${selectedExchangeRecipe.costCount} 個までです`, 'warning');
+        }
+      }
+      renderItemExchangeUI();
+    }
+
     function initItemExchangeScreen() {
       const game = getCurrentGame();
       if (!game) return;
@@ -1871,17 +1892,20 @@
       document.getElementById('requiredCostCount').innerText = selectedExchangeRecipe.costCount;
 
       const teamItems = team.items || [];
-      if (teamItems.length === 0) {
+      // 横取りされてダミー履歴となっているアイテム (isLost: true) を消費候補から除外
+      const activeTeamItems = teamItems.filter(itemObj => typeof itemObj !== 'object' || !itemObj.isLost);
+
+      if (activeTeamItems.length === 0) {
         costList.innerHTML = `<p class="text-xs text-slate-500 py-2">この軍は交換に使用できる所持アイテムがありません。</p>`;
       } else {
-        teamItems.forEach((itemObj, itemIdx) => {
+        activeTeamItems.forEach((itemObj, itemIdx) => {
           const itemName = typeof itemObj === 'string' ? itemObj : itemObj.name;
           const itemUid = `${itemIdx}-${itemName}`;
           const isChecked = selectedCostItems.includes(itemUid);
 
           const label = document.createElement('label');
           label.className = `px-3 py-2 rounded-xl border text-xs font-bold cursor-pointer select-none flex items-center gap-2 transition ${
-            isChecked ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+            isChecked ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300' : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
           }`;
           label.innerHTML = `
             <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleCostItemSelection('${itemUid}')" class="rounded bg-slate-950 border-slate-800 text-indigo-500 focus:ring-indigo-500">
@@ -1899,6 +1923,74 @@
 
       if (window.lucide) lucide.createIcons();
     }
+
+    window.executeItemExchange = function() {
+      if (!selectedExchangeRecipe) {
+        showToast('獲得したい交換アイテムを選択してください', 'warning');
+        return;
+      }
+      if (selectedCostItems.length !== selectedExchangeRecipe.costCount) {
+        showToast(`消費アイテムを必要数（${selectedExchangeRecipe.costCount}個）選択してください`, 'warning');
+        return;
+      }
+
+      const game = getCurrentGame();
+      if (!game) return;
+
+      const teamId = document.getElementById('exchangeTeamSelect').value;
+      const team = game.teams.find(t => t.id === teamId);
+      if (!team) return;
+
+      const consumedItemNames = selectedCostItems.map(uid => {
+        const parts = uid.split('-');
+        return parts.slice(1).join('-');
+      });
+
+      if (appState.isAdmin) {
+        const removeIndices = selectedCostItems
+          .map(uid => parseInt(uid.split('-')[0]))
+          .filter(n => !isNaN(n))
+          .sort((a, b) => b - a);
+
+        removeIndices.forEach(idx => {
+          if (team.items && team.items[idx]) {
+            team.items.splice(idx, 1);
+          }
+        });
+
+        if (!Array.isArray(team.items)) team.items = [];
+        team.items.push({
+          name: selectedExchangeRecipe.name,
+          round: game.currentRound || 1
+        });
+
+        addHistoryLog(game, team.name, 'アイテム交換 (即時)', [
+          `消費: [${consumedItemNames.join(', ')}] ➔ 獲得: [${selectedExchangeRecipe.name}]`
+        ], 'item');
+
+        saveStateToStorage();
+        showToast(`「${team.name}」が [${selectedExchangeRecipe.name}] と交換完了しました！`, 'success');
+        navigateTo('gameDetail');
+      } else {
+        if (!Array.isArray(game.requests)) game.requests = [];
+
+        const newRequest = {
+          id: 'req-' + Date.now(),
+          type: 'exchange',
+          time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
+          teamId: team.id,
+          teamName: team.name,
+          targetItem: selectedExchangeRecipe.name,
+          consumedItemUids: [...selectedCostItems],
+          consumedItems: consumedItemNames
+        };
+
+        game.requests.push(newRequest);
+        saveStateToStorage();
+        showToast(`「${team.name}」の [${selectedExchangeRecipe.name}] 交換申請を管理者へ送信しました！`, 'success');
+        navigateTo('gameDetail');
+      }
+    };
 
     window.renderSnatchTargetItems = function() {
       const game = getCurrentGame();
